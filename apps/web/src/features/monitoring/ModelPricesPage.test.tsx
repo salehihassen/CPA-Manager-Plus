@@ -498,6 +498,10 @@ describe('ModelPricesPage Attention UI', () => {
       loading: false,
       modelPrices: {
         'tiered-model': {
+          history: [{
+            effectiveFromMs: 1732233600000,
+            price: { prompt: 5, completion: 25, cache: 0.5, promptConfigured: true },
+          }],
           prompt: 5,
           completion: 25,
           cache: 0.5,
@@ -554,6 +558,11 @@ describe('ModelPricesPage Attention UI', () => {
       inputPrice.props.onChange({ target: { value: '6' } });
     });
 
+    await act(async () => {
+      root.findByProps({ 'data-testid': 'effective-from-input' }).props.onChange({
+        target: { value: '2026-01-02T03:04' },
+      });
+    });
     const saveButton = root.findByProps({ 'data-testid': 'save-draft-button' });
     await act(async () => {
       saveButton.props.onClick();
@@ -563,6 +572,7 @@ describe('ModelPricesPage Attention UI', () => {
       'tiered-model': expect.objectContaining({
         prompt: 6,
         source: 'manual',
+        effectiveFromMs: new Date('2026-01-02T03:04').getTime(),
         contextTiers: [
           expect.objectContaining({
             thresholdTokens: 128_000,

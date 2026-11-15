@@ -74,7 +74,7 @@ const resolveErrorMessage = (error: unknown, fallback: string) => {
 };
 
 export function ModelPricesPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { showNotification } = useNotificationStore();
   const managementKey = useAuthStore((state) => state.managementKey);
   const featureAvailability = usePanelFeatureAvailability();
@@ -99,6 +99,7 @@ export function ModelPricesPage() {
   const [selectedCandidates, setSelectedCandidates] = useState<Record<string, string>>({});
   const [draft, setDraft] = useState<PriceDraft>(() => createEmptyPriceDraft());
   const [manualEditorOpen, setManualEditorOpen] = useState(false);
+  const [effectiveFrom, setEffectiveFrom] = useState('');
   const modelPriceServiceBase = featureAvailability.modelPricesAvailable
     ? featureAvailability.managerServiceBase
     : '';
@@ -245,10 +246,16 @@ export function ModelPricesPage() {
       showNotification(t('usage_stats.model_price_model_required'), 'warning');
       return;
     }
+    const effectiveFromMs = new Date(effectiveFrom).getTime();
+    if (!Number.isFinite(effectiveFromMs) || effectiveFromMs < 0) {
+      showNotification(t('model_prices.invalid_effective_date'), 'warning');
+      return;
+    }
     const saved = await savePrices({
       ...modelPrices,
       [model]: {
         ...price,
+        effectiveFromMs,
       },
     });
     if (!saved) return;
@@ -319,6 +326,9 @@ export function ModelPricesPage() {
   };
 
   const openManualEditor = (model = '', price = modelPrices[model]) => {
+    const now = new Date();
+    now.setSeconds(0, 0);
+    setEffectiveFrom(new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16));
     setDraft(createPriceDraft(model, price));
     setManualEditorOpen(true);
   };
@@ -425,6 +435,15 @@ export function ModelPricesPage() {
         {manualEditorOpen ? (
           <div className={styles.compactEditor}>
             <Input
+              label={t('model_prices.effective_from_label')}
+              hint={t('model_prices.effective_from_hint')}
+              type="datetime-local"
+              step="60"
+              value={effectiveFrom}
+              onChange={(event) => setEffectiveFrom(event.target.value)}
+              data-testid="effective-from-input"
+            />
+            <Input
               label={t('usage_stats.model_name')}
               className={styles.compactInput}
               value={draft.model}
@@ -481,6 +500,21 @@ export function ModelPricesPage() {
                 step="0.0001"
               />
             </div>
+            {modelPrices[draft.model]?.history?.length ? (
+              <details className={styles.priceHistory}>
+                <summary>{t('model_prices.price_history_title')}</summary>
+                <ul>
+                  {(modelPrices[draft.model]?.history ?? []).map((version) => (
+                    <li key={version.effectiveFromMs}>
+                      {version.effectiveFromMs === 0
+                        ? 'Before any price update'
+                        : new Intl.DateTimeFormat(i18n?.language || 'en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(version.effectiveFromMs)}
+                      {' · ' + (version.price.promptConfigured ? version.price.prompt.toFixed(4) : 'unpriced') + '/1M'}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
             <div className={styles.compactEditorActions}>
               <Button
                 size="xs"

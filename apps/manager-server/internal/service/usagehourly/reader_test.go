@@ -99,8 +99,8 @@ func TestReaderMatchesRawCoreAndTimelines(t *testing.T) {
 		t.Fatalf("model-only projection mismatch\nrollup=%#v %#v\nraw=%#v %#v", modelOnly.Aggregate, modelOnly.ModelStats, rawAggregate, rawModels)
 	}
 	for _, row := range modelOnly.rows {
-		if row.BucketMS != 0 {
-			t.Fatalf("model-only projection retained hourly bucket: %#v", row)
+		if row.BucketMS == 0 {
+			t.Fatalf("model-only projection lost pricing timestamp: %#v", row)
 		}
 	}
 	if _, ok := reader.AnalyticsTimeline(ctx, modelOnly, "day", time.UTC); ok {

@@ -3,6 +3,7 @@ package pricing
 
 import (
 	"strings"
+	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 )
@@ -175,11 +176,16 @@ func ServiceTierMultiplier(modelName string, serviceTier string) float64 {
 // CostForModelWithServiceTier selects context or explicit service-tier prices
 // before falling back to the compatibility multiplier for older price books.
 func CostForModelWithServiceTier(modelName string, serviceTier string, tokens ModelTokens, prices map[string]model.ModelPrice) float64 {
+	return CostForModelWithServiceTierAtTime(modelName, serviceTier, tokens, prices, time.Now().UnixMilli())
+}
+
+// CostForModelWithServiceTierAtTime selects the rate effective for this usage.
+func CostForModelWithServiceTierAtTime(modelName string, serviceTier string, tokens ModelTokens, prices map[string]model.ModelPrice, timestampMS int64) float64 {
 	price, ok := resolveModelPrice(modelName, prices)
 	if !ok {
 		return 0
 	}
-	return costForPriceWithServiceTier(modelName, serviceTier, tokens, price)
+	return costForPriceWithServiceTier(modelName, serviceTier, tokens, effectivePriceAtTime(price, timestampMS))
 }
 
 // CostForModelCandidatesWithServiceTier uses the first candidate to determine
@@ -187,6 +193,11 @@ func CostForModelWithServiceTier(modelName string, serviceTier string, tokens Mo
 // Callers should pass resolved/upstream model first, followed by the requested
 // display model or alias as a price fallback.
 func CostForModelCandidatesWithServiceTier(modelNames []string, serviceTier string, tokens ModelTokens, prices map[string]model.ModelPrice) float64 {
+	return CostForModelCandidatesWithServiceTierAtTime(modelNames, serviceTier, tokens, prices, time.Now().UnixMilli())
+}
+
+// CostForModelCandidatesWithServiceTierAtTime prices usage at its bucket timestamp.
+func CostForModelCandidatesWithServiceTierAtTime(modelNames []string, serviceTier string, tokens ModelTokens, prices map[string]model.ModelPrice, timestampMS int64) float64 {
 	seen := map[string]bool{}
 	candidates := make([]string, 0, len(modelNames))
 	for _, modelName := range modelNames {
@@ -203,7 +214,7 @@ func CostForModelCandidatesWithServiceTier(modelNames []string, serviceTier stri
 	}
 	if pricingModel := strings.TrimSpace(tokens.PricingModel); pricingModel != "" {
 		if price, ok := prices[pricingModel]; ok {
-			return costForPriceWithServiceTier(behaviorModel, serviceTier, tokens, price)
+			return costForPriceWithServiceTier(behaviorModel, serviceTier, tokens, effectivePriceAtTime(price, timestampMS))
 		}
 	}
 	for _, modelName := range candidates {
@@ -211,16 +222,34 @@ func CostForModelCandidatesWithServiceTier(modelNames []string, serviceTier stri
 		if !ok {
 			continue
 		}
-		return costForPriceWithServiceTier(behaviorModel, serviceTier, tokens, price)
+		return costForPriceWithServiceTier(behaviorModel, serviceTier, tokens, effectivePriceAtTime(price, timestampMS))
 	}
 	for _, modelName := range candidates {
 		price, ok := officialGPT56Price(modelName)
 		if !ok {
 			continue
 		}
-		return costForPriceWithServiceTier(behaviorModel, serviceTier, tokens, price)
+		return costForPriceWithServiceTier(behaviorModel, serviceTier, tokens, effectivePriceAtTime(price, timestampMS))
 	}
 	return 0
+}
+
+func effectivePriceAtTime(price model.ModelPrice, timestampMS int64) model.ModelPrice {
+	if timestampMS <= 0 {
+		return price
+	}
+	for i := len(price.History) - 1; i >= 0; i-- {
+		version := price.History[i]
+		if version.EffectiveFromMS <= timestampMS {
+			historical := version.Price
+			historical.History = nil
+			return historical
+		}
+	}
+	if len(price.History) > 0 {
+		return model.ModelPrice{}
+	}
+	return price
 }
 
 // SumCost folds CostForModel over a slice of (model, tokens) tuples.

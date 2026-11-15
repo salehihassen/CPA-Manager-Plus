@@ -592,7 +592,7 @@ func TestStoreCompatModelPricesAndAPIKeyAliases(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload manual replacement: %v", err)
 	}
-	if len(prices) != 1 || prices["gpt-a"].Source != "manual" || len(prices["gpt-a"].ContextTiers) != 0 ||
+	if len(prices["gpt-a"].History) == 0 || prices["gpt-a"].Source != "manual" || len(prices["gpt-a"].ContextTiers) != 0 ||
 		len(prices["gpt-a"].ServiceTiers) != 0 {
 		t.Fatalf("manual replacement retained synchronized rules: %#v", prices)
 	}

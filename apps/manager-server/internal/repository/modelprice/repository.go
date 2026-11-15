@@ -215,6 +215,9 @@ func (r *repository) LoadAllTx(ctx context.Context, tx *sql.Tx) (map[string]mode
 	if err := serviceTierRows.Close(); err != nil {
 		return nil, err
 	}
+	if err := loadHistory(ctx, tx, prices); err != nil {
+		return nil, err
+	}
 	return prices, nil
 }
 
@@ -257,6 +260,10 @@ func (r *repository) ReplaceAll(ctx context.Context, prices map[string]model.Mod
 			}
 			return err
 		}
+	}
+
+	if err := spliceHistory(ctx, tx, beforePrices, normalizedPrices, time.Now().UnixMilli()); err != nil {
+		return err
 	}
 
 	if _, err := tx.ExecContext(ctx, `delete from model_price_service_tiers`); err != nil {
@@ -457,6 +464,9 @@ func (r *repository) UpsertSynced(ctx context.Context, prices map[string]model.M
 	}
 	afterPrices, err := r.LoadAllTx(ctx, tx)
 	if err != nil {
+		return model.ModelPriceSyncResult{}, err
+	}
+	if err := spliceHistory(ctx, tx, beforePrices, afterPrices, now); err != nil {
 		return model.ModelPriceSyncResult{}, err
 	}
 	beforeRevision := model.ModelPriceStructureRevision(beforePrices)

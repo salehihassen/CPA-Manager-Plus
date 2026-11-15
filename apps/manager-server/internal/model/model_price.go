@@ -17,6 +17,8 @@ type ModelPrice struct {
 	ServiceTiers            []ModelPriceServiceTier `json:"serviceTiers,omitempty"`
 	UpdatedAtMS             int64                   `json:"updatedAtMs,omitempty"`
 	SyncedAtMS              *int64                  `json:"syncedAtMs,omitempty"`
+	EffectiveFromMS         int64                   `json:"effectiveFromMs,omitempty"`
+	History                 []ModelPriceVersion     `json:"history,omitempty"`
 }
 
 type ModelPriceSyncResult struct {
@@ -37,4 +39,11 @@ type ModelUsageSummary struct {
 	TotalEvents   int64            `json:"total_events"`
 	Truncated     bool             `json:"truncated"`
 	Models        []ModelUsageStat `json:"models"`
+}
+
+
+// ModelPriceVersion is an immutable price rule effective from a UTC timestamp.
+type ModelPriceVersion struct {
+	EffectiveFromMS int64      `json:"effectiveFromMs"`
+	Price           ModelPrice `json:"price"`
 }
