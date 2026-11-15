@@ -77,6 +77,7 @@ type Aggregate struct {
 // ModelStat aggregates per-model totals.
 type ModelStat struct {
 	usage.LongContextTokens
+	BucketMS int64
 	usage.PricingBand
 	Model               string
 	BillingModel        string
@@ -182,6 +183,7 @@ var topModelsSQL = fmt.Sprintf(pricingBandedUsageEventsCTEWithBaseFilter("timest
 	limit ?
 )
 select
+	e.timestamp_ms - (e.timestamp_ms %% 3600000) as bucket_ms,
 	e.analytics_model_value as model,
 	e.billing_model_value as billing_model,
 	e.pricing_model_value,
@@ -203,7 +205,7 @@ select
 	coalesce(sum(e.total_tokens), 0)
 from banded_usage_events e
 join top_models t on t.model = e.analytics_model_value
-group by e.analytics_model_value, billing_model, e.pricing_model_value, e.context_threshold_tokens_value, coalesce(e.service_tier, '')
+group by e.analytics_model_value, billing_model, e.pricing_model_value, e.context_threshold_tokens_value, coalesce(e.service_tier, ''), bucket_ms
 order by max(t.model_calls) desc, e.analytics_model_value, calls desc`, usage.LongContextInputTokenThreshold)
 
 // TopModelsBetween returns the most active models ordered by call count.
@@ -221,6 +223,7 @@ func (r *repository) TopModelsBetween(ctx context.Context, fromMs, toMs int64, l
 	for rows.Next() {
 		var stat ModelStat
 		if err := rows.Scan(
+			&stat.BucketMS,
 			&stat.Model,
 			&stat.BillingModel,
 			&stat.PricingModel,
@@ -250,6 +253,7 @@ func (r *repository) TopModelsBetween(ctx context.Context, fromMs, toMs int64, l
 
 var modelStatsSQL = fmt.Sprintf(pricingBandedUsageEventsCTE+`
 select
+	timestamp_ms - (timestamp_ms %% 3600000) as bucket_ms,
 	analytics_model_value as model,
 	billing_model_value as billing_model,
 	pricing_model_value,
@@ -271,8 +275,8 @@ select
 	coalesce(sum(total_tokens), 0)
 from banded_usage_events
 where timestamp_ms >= ? and timestamp_ms < ?
-group by analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, '')
-order by calls desc`, usage.LongContextInputTokenThreshold)
+group by analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, ''), bucket_ms
+order by calls desc, bucket_ms, pricing_model_value, context_threshold_tokens_value`, usage.LongContextInputTokenThreshold)
 
 // ModelStatsBetween returns per-model totals for all models in a window.
 func (r *repository) ModelStatsBetween(ctx context.Context, fromMs, toMs int64) ([]ModelStat, error) {
@@ -286,6 +290,7 @@ func (r *repository) ModelStatsBetween(ctx context.Context, fromMs, toMs int64) 
 	for rows.Next() {
 		var stat ModelStat
 		if err := rows.Scan(
+			&stat.BucketMS,
 			&stat.Model,
 			&stat.BillingModel,
 			&stat.PricingModel,

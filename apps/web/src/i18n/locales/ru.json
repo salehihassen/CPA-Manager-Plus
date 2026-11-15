@@ -2914,7 +2914,13 @@
     "add_manual": "Добавить вручную",
     "unmatched_title": "Модели без совпадений",
     "optional_price_placeholder": "Автоматически, если пусто",
-    "empty": "Подходящих цен моделей нет"
+    "empty": "Подходящих цен моделей нет",
+    "effective_from_label": "Apply new price from",
+    "effective_from_hint": "Defaults to now. Older usage keeps the rate active at that time. Choose an earlier date only to correct known past rates.",
+    "price_history_title": "Price history",
+    "price_history_epoch": "Initial price",
+    "price_history_unpriced": "Unpriced from this point",
+    "invalid_effective_date": "Choose a valid date and time for the new price."
   },
   "usage_stats": {
     "title": "Статистика использования",

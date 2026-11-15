@@ -561,3 +561,16 @@
     flex-direction: column;
   }
 }
+
+
+.priceHistory {
+  margin: 2px 0 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.priceHistory ul {
+  max-height: 160px;
+  padding-left: 18px;
+  overflow-y: auto;
+}

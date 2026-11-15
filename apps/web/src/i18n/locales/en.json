@@ -2915,7 +2915,13 @@
     "add_manual": "Add manually",
     "unmatched_title": "Unmatched models",
     "optional_price_placeholder": "Auto when blank",
-    "empty": "No matching model prices"
+    "empty": "No matching model prices",
+    "effective_from_label": "Apply new price from",
+    "effective_from_hint": "Defaults to now. Older usage keeps the rate active at that time. Choose an earlier date only to correct known past rates.",
+    "price_history_title": "Price history",
+    "price_history_epoch": "Initial price",
+    "price_history_unpriced": "Unpriced from this point",
+    "invalid_effective_date": "Choose a valid date and time for the new price."
   },
   "usage_stats": {
     "title": "Usage Statistics",

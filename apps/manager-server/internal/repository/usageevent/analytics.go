@@ -532,6 +532,7 @@ func (r *repository) ModelStatsWithFilter(ctx context.Context, filter AnalyticsF
 	where, args := analyticsWhere(filter)
 	query := pricingBandedUsageEventsCTE + `
 select
+	timestamp_ms - (timestamp_ms % 3600000) as bucket_ms,
 	analytics_model_value as model,
 	billing_model_value as billing_model,
 	pricing_model_value,
@@ -552,8 +553,8 @@ select
 	coalesce(sum(` + longCacheCreationExpr + `), 0),
 	coalesce(sum(total_tokens), 0)
 from banded_usage_events ` + where + `
-group by analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, '')
-order by calls desc`
+group by analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, ''), bucket_ms
+order by calls desc, analytics_model_value, pricing_model_value, context_threshold_tokens_value, bucket_ms`
 	if limit > 0 {
 		query = pricingBandedUsageEventsCTE + `, filtered as (
 	select * from banded_usage_events ` + where + `
@@ -566,6 +567,7 @@ top_models as (
 	limit ?
 )
 select
+	f.timestamp_ms - (f.timestamp_ms % 3600000) as bucket_ms,
 	f.analytics_model_value as model,
 	f.billing_model_value as billing_model,
 	f.pricing_model_value,
@@ -587,7 +589,7 @@ select
 	coalesce(sum(f.total_tokens), 0)
 from filtered f
 join top_models t on t.model = f.analytics_model_value
-group by f.analytics_model_value, billing_model, f.pricing_model_value, f.context_threshold_tokens_value, coalesce(f.service_tier, '')
+group by f.analytics_model_value, billing_model, f.pricing_model_value, f.context_threshold_tokens_value, coalesce(f.service_tier, ''), bucket_ms
 order by max(t.model_calls) desc, f.analytics_model_value, calls desc`
 		args = append(args, limit)
 	}
@@ -601,6 +603,7 @@ order by max(t.model_calls) desc, f.analytics_model_value, calls desc`
 	for rows.Next() {
 		var stat ModelStat
 		if err := rows.Scan(
+			&stat.BucketMS,
 			&stat.Model,
 			&stat.BillingModel,
 			&stat.PricingModel,
