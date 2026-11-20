@@ -85,3 +85,9 @@ v2 → `next`) or state not needed.
 ## Related
 
 <!-- Closes #123 / Fixes #123 / Refs #123 / N/A -->
+
+<!-- In Related, label dependencies “Blocked by,” “Stacked on,” or “Next in stack” when applicable.
+
+If AI helped write this PR, add a visible line listing every model involved.
+**AI assistance** — model name, model name
+-->
