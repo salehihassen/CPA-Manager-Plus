@@ -33,6 +33,7 @@ type accountStatAccumulator struct {
 }
 
 type apiKeyStatKey struct {
+	bucketMS              int64
 	apiKeyHash            string
 	accountSnapshot       string
 	authLabelSnapshot     string
@@ -423,6 +424,7 @@ func mergeStoredAPIKeyStats(
 ) error {
 	conditions, args := storedStatsConditions(filter, revision, fromMS, toMS)
 	rows, err := tx.QueryContext(ctx, `select
+		bucket_ms,
 		api_key_hash,
 		account_snapshot,
 		auth_label_snapshot,
@@ -455,7 +457,7 @@ func mergeStoredAPIKeyStats(
 		sum(latency_samples)
 	from usage_monitoring_api_key_daily_rollups_v1
 	where `+strings.Join(conditions, " and ")+`
-	group by api_key_hash, account_snapshot, auth_label_snapshot,
+	group by bucket_ms, api_key_hash, account_snapshot, auth_label_snapshot,
 		coalesce(nullif(auth_provider_snapshot, ''), provider, ''), auth_account_id_snapshot, auth_index,
 		source_hash, model, billing_model, pricing_model,
 		context_threshold_tokens, service_tier`, args...)
@@ -507,6 +509,7 @@ func mergeProjectedAPIKeyStats(
 	)
 	query := monitoringBandedProjectedEventsCTE(source) + `
 	select
+		timestamp_ms - (timestamp_ms % 3600000) as bucket_ms,
 		coalesce(api_key_hash, ''),
 		coalesce(account_snapshot, ''),
 		coalesce(auth_label_snapshot, ''),
@@ -538,7 +541,7 @@ func mergeProjectedAPIKeyStats(
 		coalesce(sum(case when latency_ms is not null and latency_ms != 0 then latency_ms else 0 end), 0),
 		count(nullif(latency_ms, 0))
 	from banded_events
-	group by api_key_hash, account_snapshot, auth_label_snapshot,
+	group by bucket_ms, api_key_hash, account_snapshot, auth_label_snapshot,
 		coalesce(nullif(auth_provider_snapshot, ''), provider, ''), auth_account_id_snapshot, auth_index,
 			source_hash, analytics_model, billing_model_value, pricing_model_value,
 		context_threshold_tokens_value, coalesce(service_tier, '')`
@@ -607,6 +610,7 @@ func scanAPIKeyStats(rows *sql.Rows, grouped map[apiKeyStatKey]*apiKeyStatAccumu
 		var row APIKeyModelStat
 		var latencySumMS int64
 		if err := rows.Scan(
+			&row.BucketMS,
 			&row.APIKeyHash,
 			&row.AccountSnapshot,
 			&row.AuthLabelSnapshot,
@@ -671,6 +675,7 @@ func mergeAccountStat(grouped map[accountStatKey]*accountStatAccumulator, row Ac
 
 func mergeAPIKeyStat(grouped map[apiKeyStatKey]*apiKeyStatAccumulator, row APIKeyModelStat, latencySumMS int64) {
 	key := apiKeyStatKey{
+		bucketMS:              row.BucketMS,
 		apiKeyHash:            row.APIKeyHash,
 		accountSnapshot:       row.AccountSnapshot,
 		authLabelSnapshot:     row.AuthLabelSnapshot,

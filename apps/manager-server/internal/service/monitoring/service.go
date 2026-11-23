@@ -4697,7 +4697,7 @@ func costForAPIKeyModelStat(stat store.APIKeyModelStat, prices map[string]store.
 		LongCachedTokens:        stat.LongCachedTokens,
 		LongCacheReadTokens:     stat.LongCacheReadTokens,
 		LongCacheCreationTokens: stat.LongCacheCreationTokens,
-	}, prices, stat.LastSeenMS)
+	}, prices, stat.BucketMS)
 }
 
 func costForCredentialModelStat(stat store.CredentialModelStat, prices map[string]store.ModelPrice) float64 {
@@ -4714,7 +4714,7 @@ func costForCredentialModelStat(stat store.CredentialModelStat, prices map[strin
 		LongCachedTokens:        stat.LongCachedTokens,
 		LongCacheReadTokens:     stat.LongCacheReadTokens,
 		LongCacheCreationTokens: stat.LongCacheCreationTokens,
-	}, prices, stat.LastSeenMS)
+	}, prices, stat.BucketMS)
 }
 
 func costForCredentialTimelinePoint(point store.CredentialTimelinePoint, prices map[string]store.ModelPrice) float64 {

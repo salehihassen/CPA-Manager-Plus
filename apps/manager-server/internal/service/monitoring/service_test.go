@@ -4694,7 +4694,7 @@ func testCanonicalHash(hash string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func TestHeatmapAndChannelsPreserveHistoricalRates(t *testing.T) {
+func TestMonitoringStatsPreserveHistoricalRates(t *testing.T) {
 	for _, newMS := range []int64{7200000, 3600000 + 7*24*3600000} {
 		t.Run(fmt.Sprint(newMS), func(t *testing.T) {
 			db := newMonitoringTestStore(t)
@@ -4747,6 +4747,30 @@ func TestHeatmapAndChannelsPreserveHistoricalRates(t *testing.T) {
 				}
 			}
 			assertChannels(channels)
+			assertCredentials := func() {
+				t.Helper()
+				rows, err := db.CredentialModelStatsWithFilter(ctx, filter)
+				if err != nil {
+					t.Fatal(err)
+				}
+				stats := buildCredentialStats(rows, prices)
+				if len(stats) != 1 || stats[0].Calls != 2 || math.Abs(stats[0].Cost-3) > 1e-9 {
+					t.Fatalf("historical credentials = %#v, want 2 calls costing $3", stats)
+				}
+			}
+			assertAPIKeys := func(rows []store.APIKeyModelStat) {
+				t.Helper()
+				stats := buildAPIKeyStats(rows, prices)
+				if len(stats) != 1 || stats[0].Calls != 2 || math.Abs(stats[0].Cost-3) > 1e-9 {
+					t.Fatalf("historical API keys = %#v, want 2 calls costing $3", stats)
+				}
+			}
+			assertCredentials()
+			keys, err := db.APIKeyModelStatsWithFilter(ctx, filter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertAPIKeys(keys)
 			// Check both the projection fallback and the stored monitoring rollups.
 			for _, stored := range []bool{false, true} {
 				if stored {
@@ -4759,6 +4783,11 @@ func TestHeatmapAndChannelsPreserveHistoricalRates(t *testing.T) {
 					t.Fatalf("account stats available=%v err=%v", available, err)
 				}
 				assertChannels(channelModelStatsFromAccountStats(accounts))
+				keys, _, available, err := db.UsageMonitoringAPIKeyStats(ctx, filter)
+				if err != nil || !available {
+					t.Fatalf("API key stats available=%v err=%v", available, err)
+				}
+				assertAPIKeys(keys)
 			}
 
 		})
