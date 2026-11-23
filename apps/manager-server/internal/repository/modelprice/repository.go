@@ -16,6 +16,8 @@ import (
 var ErrStructureChangeAfterRawDeletion = errors.New("model price structure cannot change after archived raw usage has been deleted")
 
 type Repository interface {
+	LoadPricingBook(ctx context.Context) (map[string]model.ModelPrice, error)
+	LoadPricingBookTx(ctx context.Context, tx *sql.Tx) (map[string]model.ModelPrice, error)
 	LoadAll(ctx context.Context) (map[string]model.ModelPrice, error)
 	LoadAllTx(ctx context.Context, tx *sql.Tx) (map[string]model.ModelPrice, error)
 	ReplaceAll(ctx context.Context, prices map[string]model.ModelPrice) error
@@ -215,7 +217,7 @@ func (r *repository) LoadAllTx(ctx context.Context, tx *sql.Tx) (map[string]mode
 	if err := serviceTierRows.Close(); err != nil {
 		return nil, err
 	}
-	if err := loadHistory(ctx, tx, prices); err != nil {
+	if err := loadHistory(ctx, tx, prices, false); err != nil {
 		return nil, err
 	}
 	return prices, nil
@@ -248,11 +250,21 @@ func (r *repository) ReplaceAll(ctx context.Context, prices map[string]model.Mod
 		if err != nil {
 			return err
 		}
+		price.Retired = false
 		normalizedPrices[modelID] = price
 	}
 
-	beforeRevision := model.ModelPriceStructureRevision(beforePrices)
-	afterRevision := model.ModelPriceStructureRevision(normalizedPrices)
+	beforeRevision, err := usagepricing.StructureRevision(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if err := extendBandPartition(ctx, tx, normalizedPrices); err != nil {
+		return err
+	}
+	afterRevision, err := usagepricing.StructureRevision(ctx, tx)
+	if err != nil {
+		return err
+	}
 	if beforeRevision != afterRevision {
 		if err := usagepricing.VerifyRetainedPricingRebuildSourceTx(ctx, tx); err != nil {
 			if errors.Is(err, usagepricing.ErrRetainedPricingHistoryIncomplete) {
@@ -466,11 +478,25 @@ func (r *repository) UpsertSynced(ctx context.Context, prices map[string]model.M
 	if err != nil {
 		return model.ModelPriceSyncResult{}, err
 	}
+	for id, price := range afterPrices {
+		price.EffectiveFromMS = 0
+		price.Retired = false
+		afterPrices[id] = price
+	}
 	if err := spliceHistory(ctx, tx, beforePrices, afterPrices, now); err != nil {
 		return model.ModelPriceSyncResult{}, err
 	}
-	beforeRevision := model.ModelPriceStructureRevision(beforePrices)
-	afterRevision := model.ModelPriceStructureRevision(afterPrices)
+	beforeRevision, err := usagepricing.StructureRevision(ctx, tx)
+	if err != nil {
+		return model.ModelPriceSyncResult{}, err
+	}
+	if err := extendBandPartition(ctx, tx, afterPrices); err != nil {
+		return model.ModelPriceSyncResult{}, err
+	}
+	afterRevision, err := usagepricing.StructureRevision(ctx, tx)
+	if err != nil {
+		return model.ModelPriceSyncResult{}, err
+	}
 	if beforeRevision != afterRevision {
 		if err := usagepricing.VerifyRetainedPricingRebuildSourceTx(ctx, tx); err != nil {
 			if errors.Is(err, usagepricing.ErrRetainedPricingHistoryIncomplete) {
@@ -559,4 +585,48 @@ func nullInt(value *int64) any {
 		return nil
 	}
 	return *value
+}
+
+func (r *repository) LoadPricingBook(ctx context.Context) (map[string]model.ModelPrice, error) {
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	book, err := r.LoadPricingBookTx(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return book, nil
+}
+func (r *repository) LoadPricingBookTx(ctx context.Context, tx *sql.Tx) (map[string]model.ModelPrice, error) {
+	book, err := r.LoadAllTx(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	for name, price := range book {
+		price.History = nil
+		book[name] = price
+	}
+	if err := loadHistory(ctx, tx, book, true); err != nil {
+		return nil, err
+	}
+	return book, nil
+}
+
+func extendBandPartition(ctx context.Context, tx *sql.Tx, prices map[string]model.ModelPrice) error {
+	for name, price := range prices {
+		if _, err := tx.ExecContext(ctx, "insert or ignore into model_price_band_models(model) values (?)", name); err != nil {
+			return err
+		}
+		for _, tier := range price.ContextTiers {
+			if _, err := tx.ExecContext(ctx, "insert or ignore into model_price_band_thresholds(model,threshold_tokens) values (?,?)", name, tier.ThresholdTokens); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

@@ -286,7 +286,7 @@ func (s *Store) HasHistoricalData(ctx context.Context) (bool, error) {
 }
 
 func (s *Store) LoadModelPrices(ctx context.Context) (map[string]ModelPrice, error) {
-	return s.ModelPrices.LoadAll(ctx)
+	return s.ModelPrices.LoadPricingBook(ctx)
 }
 
 func (s *Store) SaveModelPrices(ctx context.Context, prices map[string]ModelPrice) error {
@@ -699,7 +699,7 @@ func (s *Store) LoadUsageHourlyPricingSnapshot(
 	} else if pricingErr != nil {
 		return UsageHourlyPricingSnapshot{}, pricingErr
 	}
-	prices, err := s.ModelPrices.LoadAllTx(ctx, tx)
+	prices, err := s.ModelPrices.LoadPricingBookTx(ctx, tx)
 	if err != nil {
 		return UsageHourlyPricingSnapshot{}, err
 	}
@@ -774,7 +774,7 @@ func (s *Store) LoadUsagePricingAccountSnapshot(ctx context.Context, accountKeys
 	}
 	available = len(incomplete) == 0
 
-	prices, err := s.ModelPrices.LoadAllTx(ctx, tx)
+	prices, err := s.ModelPrices.LoadPricingBookTx(ctx, tx)
 	if err != nil {
 		return UsagePricingAccountSnapshot{}, err
 	}
@@ -1039,4 +1039,8 @@ func (s *Store) ActiveDaysWithFilter(ctx context.Context, filter AnalyticsFilter
 
 func (s *Store) ZeroTokenModelsWithFilter(ctx context.Context, filter AnalyticsFilter) ([]string, error) {
 	return s.UsageEvents.ZeroTokenModelsWithFilter(ctx, filter)
+}
+
+func (s *Store) LoadCurrentModelPrices(ctx context.Context) (map[string]ModelPrice, error) {
+	return s.ModelPrices.LoadAll(ctx)
 }

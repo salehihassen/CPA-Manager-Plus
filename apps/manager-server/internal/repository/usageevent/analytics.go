@@ -138,6 +138,7 @@ type HourlyPoint struct {
 }
 
 type HeatmapPoint struct {
+	BucketMS int64
 	usage.LongContextTokens
 	usage.PricingBand
 	Weekday             int
@@ -159,6 +160,7 @@ type HeatmapPoint struct {
 }
 
 type ChannelModelStat struct {
+	BucketMS int64
 	usage.LongContextTokens
 	usage.PricingBand
 	AuthIndex             string
@@ -197,6 +199,7 @@ type FailureSourceStat struct {
 }
 
 type AccountModelStat struct {
+	BucketMS int64
 	usage.LongContextTokens
 	usage.PricingBand
 	AccountSnapshot              string
@@ -1296,6 +1299,7 @@ order by timestamp_ms, model`, args...)
 		location = time.UTC
 	}
 	type key struct {
+		bucketMS               int64
 		weekday                int
 		hour                   int
 		model                  string
@@ -1345,6 +1349,7 @@ order by timestamp_ms, model`, args...)
 		}
 		tm := time.UnixMilli(timestampMS).In(location)
 		mapKey := key{
+			bucketMS:               timestampMS - timestampMS%3600000,
 			weekday:                int(tm.Weekday()),
 			hour:                   tm.Hour(),
 			model:                  model,
@@ -1362,6 +1367,7 @@ order by timestamp_ms, model`, args...)
 					PricingModel:           pricingModel,
 					ContextThresholdTokens: contextThresholdTokens,
 				},
+				BucketMS:     mapKey.bucketMS,
 				Weekday:      mapKey.weekday,
 				Hour:         mapKey.hour,
 				Model:        model,
@@ -1401,6 +1407,7 @@ func (r *repository) ChannelModelStatsWithFilter(ctx context.Context, filter Ana
 	where, args := analyticsWhere(filter)
 	rows, err := r.db.QueryContext(ctx, pricingBandedUsageEventsCTE+`
 select
+	timestamp_ms - (timestamp_ms % 3600000) as bucket_ms,
 	coalesce(auth_index, ''),
 	coalesce(max(source), ''),
 	coalesce(max(account_snapshot), ''),
@@ -1429,8 +1436,8 @@ select
 	avg(nullif(latency_ms, 0)),
 	count(nullif(latency_ms, 0))
 from banded_usage_events `+where+`
-group by auth_index, analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, '')
-order by count(*) desc`, args...)
+group by bucket_ms, auth_index, analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, '')
+order by count(*) desc, bucket_ms`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1440,6 +1447,7 @@ order by count(*) desc`, args...)
 	for rows.Next() {
 		var stat ChannelModelStat
 		if err := rows.Scan(
+			&stat.BucketMS,
 			&stat.AuthIndex,
 			&stat.Source,
 			&stat.AccountSnapshot,
@@ -1523,6 +1531,7 @@ func (r *repository) AccountModelStatsWithFilter(ctx context.Context, filter Ana
 	where, args := analyticsWhere(filter)
 	rows, err := r.db.QueryContext(ctx, pricingBandedUsageEventsCTE+`
 select
+	timestamp_ms - (timestamp_ms % 3600000) as bucket_ms,
 	coalesce(account_snapshot, ''),
 	coalesce(auth_label_snapshot, ''),
 	coalesce(nullif(auth_provider_snapshot, ''), provider, ''),
@@ -1556,7 +1565,7 @@ select
 	avg(nullif(latency_ms, 0)),
 	count(nullif(latency_ms, 0))
 from banded_usage_events `+where+`
-group by account_snapshot, auth_label_snapshot, coalesce(nullif(auth_provider_snapshot, ''), provider, ''), auth_account_id_snapshot, auth_index, source_hash, analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, '')
+group by bucket_ms, account_snapshot, auth_label_snapshot, coalesce(nullif(auth_provider_snapshot, ''), provider, ''), auth_account_id_snapshot, auth_index, source_hash, analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, '')
 order by max(timestamp_ms) desc, count(*) desc`, args...)
 	if err != nil {
 		return nil, err
@@ -1567,6 +1576,7 @@ order by max(timestamp_ms) desc, count(*) desc`, args...)
 	for rows.Next() {
 		var stat AccountModelStat
 		if err := rows.Scan(
+			&stat.BucketMS,
 			&stat.AccountSnapshot,
 			&stat.AuthLabelSnapshot,
 			&stat.AuthProviderSnapshot,

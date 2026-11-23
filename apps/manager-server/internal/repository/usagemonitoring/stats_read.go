@@ -13,6 +13,7 @@ import (
 )
 
 type accountStatKey struct {
+	bucketMS              int64
 	accountSnapshot       string
 	authLabelSnapshot     string
 	authProviderSnapshot  string
@@ -70,15 +71,15 @@ func monitoringBandedProjectedEventsCTE(source string) string {
 			) as compatible_cached_tokens_value,
 			normalized_total_input_tokens as normalized_input_tokens_value
 		from base_events
-		left join model_prices billing_price on billing_price.model = coalesce(nullif(base_events.resolved_model, ''), base_events.analytics_model)
-		left join model_prices analytics_price on analytics_price.model = base_events.analytics_model
-		left join model_prices display_price on display_price.model = base_events.model
+		left join model_price_band_models billing_price on billing_price.model = coalesce(nullif(base_events.resolved_model, ''), base_events.analytics_model)
+		left join model_price_band_models analytics_price on analytics_price.model = base_events.analytics_model
+		left join model_price_band_models display_price on display_price.model = base_events.model
 	), banded_events as (
 		select
 			priced_events.*,
 			coalesce((
 				select max(tier.threshold_tokens)
-				from model_price_context_tiers tier
+				from model_price_band_thresholds tier
 				where tier.model = priced_events.pricing_model_value
 					and priced_events.normalized_total_input_tokens > tier.threshold_tokens
 			), %d) as context_threshold_tokens_value
@@ -160,7 +161,7 @@ func statsReadState(ctx context.Context, tx *sql.Tx) (State, string, bool, error
 	if state.SchemaVersion != SchemaVersion {
 		return state, "", false, nil
 	}
-	revision, err := currentStructureRevision(ctx, tx)
+	revision, err := StatsStructureRevision(ctx, tx)
 	if err != nil {
 		return State{}, "", false, err
 	}
@@ -277,6 +278,7 @@ func mergeStoredAccountStats(
 ) error {
 	conditions, args := storedStatsConditions(filter, revision, fromMS, toMS)
 	rows, err := tx.QueryContext(ctx, `select
+		bucket_ms,
 		account_snapshot,
 		auth_label_snapshot,
 		coalesce(nullif(auth_provider_snapshot, ''), provider, ''),
@@ -310,7 +312,7 @@ func mergeStoredAccountStats(
 		sum(latency_samples)
 	from usage_monitoring_account_daily_rollups_v1
 	where `+strings.Join(conditions, " and ")+`
-	group by account_snapshot, auth_label_snapshot,
+	group by bucket_ms, account_snapshot, auth_label_snapshot,
 		coalesce(nullif(auth_provider_snapshot, ''), provider, ''), auth_account_id_snapshot, auth_index,
 		source_hash, model, billing_model, pricing_model,
 		context_threshold_tokens, service_tier`, args...)
@@ -365,6 +367,7 @@ func mergeProjectedAccountStats(
 	)
 	query := monitoringBandedProjectedEventsCTE(source) + `
 		select
+	timestamp_ms - (timestamp_ms % 3600000) as bucket_ms,
 		coalesce(account_snapshot, ''),
 		coalesce(auth_label_snapshot, ''),
 		coalesce(nullif(auth_provider_snapshot, ''), provider, ''),
@@ -397,7 +400,7 @@ func mergeProjectedAccountStats(
 		coalesce(sum(case when latency_ms is not null and latency_ms != 0 then latency_ms else 0 end), 0),
 		count(nullif(latency_ms, 0))
 	from banded_events
-	group by account_snapshot, auth_label_snapshot,
+	group by bucket_ms, account_snapshot, auth_label_snapshot,
 		coalesce(nullif(auth_provider_snapshot, ''), provider, ''), auth_account_id_snapshot, auth_index,
 			source_hash, analytics_model, billing_model_value, pricing_model_value,
 		context_threshold_tokens_value, coalesce(service_tier, '')`
@@ -558,6 +561,7 @@ func scanAccountStats(rows *sql.Rows, grouped map[accountStatKey]*accountStatAcc
 		var row AccountModelStat
 		var latencySumMS int64
 		if err := rows.Scan(
+			&row.BucketMS,
 			&row.AccountSnapshot,
 			&row.AuthLabelSnapshot,
 			&row.AuthProviderSnapshot,
@@ -643,6 +647,7 @@ func scanAPIKeyStats(rows *sql.Rows, grouped map[apiKeyStatKey]*apiKeyStatAccumu
 
 func mergeAccountStat(grouped map[accountStatKey]*accountStatAccumulator, row AccountModelStat, latencySumMS int64) {
 	key := accountStatKey{
+		bucketMS:              row.BucketMS,
 		accountSnapshot:       row.AccountSnapshot,
 		authLabelSnapshot:     row.AuthLabelSnapshot,
 		authProviderSnapshot:  row.AuthProviderSnapshot,

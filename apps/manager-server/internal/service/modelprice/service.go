@@ -277,7 +277,7 @@ func newMultiSource(
 }
 
 func (s *Service) List(ctx context.Context) (map[string]store.ModelPrice, error) {
-	return s.store.LoadModelPrices(ctx)
+	return s.store.LoadCurrentModelPrices(ctx)
 }
 
 func (s *Service) UsageSummary(ctx context.Context, limit int) (store.ModelUsageSummary, error) {
@@ -307,7 +307,7 @@ func (s *Service) Replace(ctx context.Context, prices map[string]store.ModelPric
 		return nil, err
 	}
 	s.notifyPricesChanged()
-	return s.store.LoadModelPrices(ctx)
+	return s.store.LoadCurrentModelPrices(ctx)
 }
 
 func (s *Service) Sync(ctx context.Context, req SyncRequest) (SyncResult, error) {
@@ -337,7 +337,7 @@ func (s *Service) Sync(ctx context.Context, req SyncRequest) (SyncResult, error)
 		}
 
 		if len(effectiveModels) == 0 {
-			prices, err := s.store.LoadModelPrices(ctx)
+			prices, err := s.store.LoadCurrentModelPrices(ctx)
 			if err != nil {
 				return SyncResult{}, err
 			}
@@ -364,7 +364,7 @@ func (s *Service) Sync(ctx context.Context, req SyncRequest) (SyncResult, error)
 	selection := selectModelPriceCollection(remotePrices, effectiveModels)
 	preserved := []string(nil)
 	if hasFailedSyncSource(sourceResults) {
-		existingPrices, err := s.store.LoadModelPrices(ctx)
+		existingPrices, err := s.store.LoadCurrentModelPrices(ctx)
 		if err != nil {
 			return SyncResult{}, err
 		}
@@ -380,7 +380,7 @@ func (s *Service) Sync(ctx context.Context, req SyncRequest) (SyncResult, error)
 	if result.Imported > 0 {
 		s.notifyPricesChanged()
 	}
-	prices, err := s.store.LoadModelPrices(ctx)
+	prices, err := s.store.LoadCurrentModelPrices(ctx)
 	if err != nil {
 		return SyncResult{}, err
 	}
@@ -425,7 +425,7 @@ func (s *Service) RuntimeModelPricingStatus(ctx context.Context) (RuntimeModelPr
 		return RuntimeModelPricingStatus{}, err
 	}
 
-	prices, err := s.store.LoadModelPrices(ctx)
+	prices, err := s.store.LoadCurrentModelPrices(ctx)
 	if err != nil {
 		return RuntimeModelPricingStatus{}, err
 	}

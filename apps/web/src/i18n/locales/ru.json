@@ -2916,11 +2916,11 @@
     "optional_price_placeholder": "Автоматически, если пусто",
     "empty": "Подходящих цен моделей нет",
     "effective_from_label": "Apply new price from",
-    "effective_from_hint": "Defaults to now. Older usage keeps the rate active at that time. Choose an earlier date only to correct known past rates.",
-    "price_history_title": "Price history",
-    "price_history_epoch": "Initial price",
-    "price_history_unpriced": "Unpriced from this point",
-    "invalid_effective_date": "Choose a valid date and time for the new price."
+    "effective_from_hint": "По умолчанию — начало следующего часа UTC: стоимость прошлых запросов сохраняется. Можно исправить только последнюю версию.",
+    "price_history_title": "История цен",
+    "price_history_epoch": "Начальная цена",
+    "price_history_unpriced": "С этого момента цена не задана",
+    "invalid_effective_date": "Выберите начало часа UTC, не позднее следующего часа."
   },
   "usage_stats": {
     "title": "Статистика использования",

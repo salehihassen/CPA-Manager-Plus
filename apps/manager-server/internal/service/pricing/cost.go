@@ -185,7 +185,7 @@ func CostForModelWithServiceTierAtTime(modelName string, serviceTier string, tok
 	if !ok {
 		return 0
 	}
-	return costForPriceWithServiceTier(modelName, serviceTier, tokens, effectivePriceAtTime(price, timestampMS))
+	return costForHistoricalPrice(modelName, serviceTier, tokens, effectivePriceAtTime(price, timestampMS))
 }
 
 // CostForModelCandidatesWithServiceTier uses the first candidate to determine
@@ -213,23 +213,23 @@ func CostForModelCandidatesWithServiceTierAtTime(modelNames []string, serviceTie
 		behaviorModel = candidates[0]
 	}
 	if pricingModel := strings.TrimSpace(tokens.PricingModel); pricingModel != "" {
-		if price, ok := prices[pricingModel]; ok {
-			return costForPriceWithServiceTier(behaviorModel, serviceTier, tokens, effectivePriceAtTime(price, timestampMS))
+		if price, ok := prices[pricingModel]; ok && !effectivePriceAtTime(price, timestampMS).Retired {
+			return costForHistoricalPrice(behaviorModel, serviceTier, tokens, effectivePriceAtTime(price, timestampMS))
 		}
 	}
 	for _, modelName := range candidates {
 		price, ok := prices[modelName]
-		if !ok {
+		if !ok || effectivePriceAtTime(price, timestampMS).Retired {
 			continue
 		}
-		return costForPriceWithServiceTier(behaviorModel, serviceTier, tokens, effectivePriceAtTime(price, timestampMS))
+		return costForHistoricalPrice(behaviorModel, serviceTier, tokens, effectivePriceAtTime(price, timestampMS))
 	}
 	for _, modelName := range candidates {
 		price, ok := officialGPT56Price(modelName)
-		if !ok {
+		if !ok || effectivePriceAtTime(price, timestampMS).Retired {
 			continue
 		}
-		return costForPriceWithServiceTier(behaviorModel, serviceTier, tokens, effectivePriceAtTime(price, timestampMS))
+		return costForHistoricalPrice(behaviorModel, serviceTier, tokens, effectivePriceAtTime(price, timestampMS))
 	}
 	return 0
 }
@@ -242,12 +242,13 @@ func effectivePriceAtTime(price model.ModelPrice, timestampMS int64) model.Model
 		version := price.History[i]
 		if version.EffectiveFromMS <= timestampMS {
 			historical := version.Price
+			historical.Retired = version.Retired
 			historical.History = nil
 			return historical
 		}
 	}
 	if len(price.History) > 0 {
-		return model.ModelPrice{}
+		return model.ModelPrice{Retired: true}
 	}
 	return price
 }
@@ -440,4 +441,20 @@ func clampTokens(value int64, total int64) int64 {
 
 func configuredPriceValue(value float64, configured bool) bool {
 	return configured || value > 0
+}
+
+func costForHistoricalPrice(name, tier string, tokens ModelTokens, price model.ModelPrice) float64 {
+	if price.Retired {
+		return 0
+	}
+	if tokens.ContextThresholdTokens > 0 {
+		threshold := int64(-1)
+		for _, band := range price.ContextTiers {
+			if band.ThresholdTokens <= tokens.ContextThresholdTokens && band.ThresholdTokens > threshold {
+				threshold = band.ThresholdTokens
+			}
+		}
+		tokens.ContextThresholdTokens = threshold
+	}
+	return costForPriceWithServiceTier(name, tier, tokens, price)
 }

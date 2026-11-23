@@ -2912,11 +2912,11 @@
     "optional_price_placeholder": "留空时自动计算",
     "empty": "没有符合条件的模型价格",
     "effective_from_label": "Apply new price from",
-    "effective_from_hint": "Defaults to now. Older usage keeps the rate active at that time. Choose an earlier date only to correct known past rates.",
-    "price_history_title": "Price history",
-    "price_history_epoch": "Initial price",
-    "price_history_unpriced": "Unpriced from this point",
-    "invalid_effective_date": "Choose a valid date and time for the new price."
+    "effective_from_hint": "默认从下一个 UTC 整点生效，保留此前用量的价格。仅可更正最新版本，不支持更晚的计划。",
+    "price_history_title": "价格历史",
+    "price_history_epoch": "初始价格",
+    "price_history_unpriced": "此后未定价",
+    "invalid_effective_date": "请选择不晚于下一个整点的 UTC 整点。"
   },
   "usage_stats": {
     "title": "使用统计",

@@ -4693,3 +4693,74 @@ func testCanonicalHash(hash string) string {
 	sum := sha256.Sum256([]byte(hash))
 	return hex.EncodeToString(sum[:])
 }
+
+func TestHeatmapAndChannelsPreserveHistoricalRates(t *testing.T) {
+	for _, newMS := range []int64{7200000, 3600000 + 7*24*3600000} {
+		t.Run(fmt.Sprint(newMS), func(t *testing.T) {
+			db := newMonitoringTestStore(t)
+			ctx := context.Background()
+			const oldMS int64 = 3600000
+			if err := db.SaveModelPrices(ctx, map[string]store.ModelPrice{"historical": {Prompt: 1}}); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.SaveModelPrices(ctx, map[string]store.ModelPrice{"historical": {Prompt: 2, EffectiveFromMS: newMS}}); err != nil {
+				t.Fatal(err)
+			}
+			for i, timestamp := range []int64{oldMS, newMS} {
+				event := monitoringEvent(fmt.Sprintf("historical-%d", i), timestamp+1, "historical", "auth-a", "source-a", false, 1000000, 0, 0, 0, 1000000, nil)
+				if _, err := db.InsertEvents(ctx, []usage.Event{event}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			prices, err := db.LoadModelPrices(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			filter := store.AnalyticsFilter{FromMS: 0, ToMS: (newMS/(24*3600000) + 1) * 24 * 3600000, IncludeFailed: true}
+			points, err := db.HeatmapWithFilter(ctx, filter, time.UTC)
+			if err != nil {
+				t.Fatal(err)
+			}
+			heatmap := buildHeatmap(points, prices)
+			var cost float64
+			var calls int64
+			for _, point := range heatmap {
+				cost += point.Cost
+				calls += point.Calls
+			}
+			expectedCells := 1
+			if newMS == 7200000 {
+				expectedCells = 2
+			}
+			if len(heatmap) != expectedCells || calls != 2 || math.Abs(cost-3) > 1e-9 {
+				t.Fatalf("historical heatmap = %#v, want 2 calls costing $3", heatmap)
+			}
+			channels, err := db.ChannelModelStatsWithFilter(ctx, filter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertChannels := func(rows []store.ChannelModelStat) {
+				t.Helper()
+				share := buildChannelShare(rows, prices)
+				if len(share) != 1 || share[0].Calls != 2 || math.Abs(share[0].Cost-3) > 1e-9 {
+					t.Fatalf("historical channel share = %#v, want 2 calls costing $3", share)
+				}
+			}
+			assertChannels(channels)
+			// Check both the projection fallback and the stored monitoring rollups.
+			for _, stored := range []bool{false, true} {
+				if stored {
+					if _, err := db.CatchUpUsageMonitoringStats(ctx, 100, newMS+3600000); err != nil {
+						t.Fatal(err)
+					}
+				}
+				accounts, _, available, err := db.UsageMonitoringAccountStats(ctx, filter)
+				if err != nil || !available {
+					t.Fatalf("account stats available=%v err=%v", available, err)
+				}
+				assertChannels(channelModelStatsFromAccountStats(accounts))
+			}
+
+		})
+	}
+}

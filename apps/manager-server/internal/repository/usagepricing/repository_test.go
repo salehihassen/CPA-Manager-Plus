@@ -86,8 +86,8 @@ func TestPricingRollupRebuildsFromRetainedProjectionAfterRawDeletion(t *testing.
 	price := store.ModelPrice{
 		Prompt: 1,
 		ContextTiers: []store.ModelPriceContextTier{{
-			ThresholdTokens: 100,
-			Prompt:          2,
+			ThresholdTokens:  100,
+			Prompt:           2,
 			PromptConfigured: true,
 		}},
 	}
@@ -164,7 +164,7 @@ func TestPricingRollupRebuildsFromRetainedProjectionAfterRawDeletion(t *testing.
 	if calls != 2 {
 		t.Fatalf("retained rebuild calls=%d rows=%#v", calls, rows)
 	}
-	if byThreshold[model.ModelPriceBaseContextThreshold] != 1 || byThreshold[200] != 1 {
+	if byThreshold[100] != 1 || byThreshold[200] != 1 {
 		t.Fatalf("retained rebuild threshold rows=%#v", byThreshold)
 	}
 
@@ -465,19 +465,22 @@ func TestPricingRollupRateUpdatesKeepRevisionAndThresholdUpdatesRebuild(t *testi
 	if err != nil || !available || len(rows) != 1 {
 		t.Fatalf("rebuilt rows available=%v err=%v rows=%#v", available, err, rows)
 	}
-	if rows[0].ContextThresholdTokens != model.ModelPriceBaseContextThreshold {
+	if rows[0].ContextThresholdTokens != 100 {
 		t.Fatalf("rebuilt threshold = %d", rows[0].ContextThresholdTokens)
 	}
 }
 
-// TestPricingRollupRevisionRollbackDoesNotDoubleCount covers a deterministic
-// A-to-B-to-A rollback. Target-revision rows are cleared in bounded batches,
-// readers use raw events while clearing, and the restored revision is rebuilt
-// exactly once.
+// Price rollbacks retain historical bands. A restart during explicit clearing
+// must still clear retained target rows before rebuilding them exactly once.
 func TestPricingRollupRevisionRollbackDoesNotDoubleCount(t *testing.T) {
 	ctx := context.Background()
 	cfg := testutil.NewConfig(t)
-	st := testutil.NewStore(t, cfg)
+	sqlDB, err := sqliterepo.Open(cfg.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	st := store.New(sqlDB)
 	threshold := func(value int64) store.ModelPrice {
 		return store.ModelPrice{
 			Prompt:       1,
@@ -517,12 +520,28 @@ func TestPricingRollupRevisionRollbackDoesNotDoubleCount(t *testing.T) {
 		t.Fatalf("catch up threshold update: %v", err)
 	}
 	assertSingleCall()
-	// Restore revision A. A limit of one clears only the hourly row in the first
-	// transaction, leaving the account row for the resumed transaction.
+	// Restoring rates A must keep the expanded historical band partition.
+	revisionB, err := st.UsagePricingState(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := st.SaveModelPrices(ctx, map[string]store.ModelPrice{"resolved-model": threshold(100)}); err != nil {
 		t.Fatalf("rollback to prices A: %v", err)
 	}
-	result, err := st.CatchUpUsagePricing(ctx, 1, 30_000)
+	result, err := st.CatchUpUsagePricing(ctx, 1, 29_000)
+	if err != nil || result.Rebuilt || result.Pending {
+		t.Fatalf("historical bands should not rebuild on rollback: %#v err=%v", result, err)
+	}
+	rollbackState, err := st.UsagePricingState(ctx)
+	if err != nil || rollbackState.StructureRevision != revisionB.StructureRevision {
+		t.Fatalf("rollback lost historical bands: %#v err=%v", rollbackState, err)
+	}
+	assertSingleCall()
+	// Simulate a restart with clearing persisted and old target rows still present.
+	if _, err := sqlDB.ExecContext(ctx, `update usage_pricing_rollup_state set status='clearing', coverage_event_id=0, backfill_last_event_id=0, processed_events=0`); err != nil {
+		t.Fatal(err)
+	}
+	result, err = st.CatchUpUsagePricing(ctx, 1, 30_000)
 	if err != nil {
 		t.Fatalf("start bounded rollback clearing: %v", err)
 	}

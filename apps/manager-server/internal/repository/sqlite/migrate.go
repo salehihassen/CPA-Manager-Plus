@@ -772,12 +772,18 @@ func Migrate(db *sql.DB) error {
 			primary key (model, mode, service_tier),
 			foreign key (model) references model_prices(model) on delete cascade
 		)`,
+		`create table if not exists model_price_band_models (model text primary key)`,
+		`create table if not exists model_price_band_thresholds (model text not null, threshold_tokens integer not null, primary key(model,threshold_tokens))`,
+		`insert or ignore into model_price_band_models select model from model_prices`,
+		`insert or ignore into model_price_band_thresholds select model,threshold_tokens from model_price_context_tiers`,
 		`create table if not exists model_price_history (
 			model text not null,
 			effective_from_ms integer not null,
 			price_json text not null,
 			primary key (model, effective_from_ms)
 		)`,
+		`insert or ignore into model_price_band_models select distinct model from model_price_history`,
+		`insert or ignore into model_price_band_thresholds select h.model, json_extract(t.value, '$.thresholdTokens') from model_price_history h, json_each(h.price_json, '$.contextTiers') t`,
 		`create table if not exists api_key_aliases (
 			api_key_hash text primary key,
 			alias text not null,

@@ -2358,6 +2358,7 @@ func (s *Service) channelModelStatsWithSource(ctx context.Context, filter store.
 }
 
 type channelModelStatKey struct {
+	bucketMS         int64
 	authIndex        string
 	model            string
 	billingModel     string
@@ -2377,6 +2378,7 @@ func channelModelStatsFromAccountStats(stats []store.AccountModelStat) []store.C
 	grouped := make(map[channelModelStatKey]*channelModelStatAccumulator)
 	for _, stat := range stats {
 		key := channelModelStatKey{
+			bucketMS:         stat.BucketMS,
 			authIndex:        stat.AuthIndex,
 			model:            stat.Model,
 			billingModel:     stat.BillingModel,
@@ -2388,6 +2390,7 @@ func channelModelStatsFromAccountStats(stats []store.AccountModelStat) []store.C
 		if entry == nil {
 			entry = &channelModelStatAccumulator{
 				row: store.ChannelModelStat{
+					BucketMS:     stat.BucketMS,
 					PricingBand:  pricingBandFromAccountStat(stat),
 					AuthIndex:    stat.AuthIndex,
 					Model:        stat.Model,
@@ -2453,6 +2456,9 @@ func channelModelStatsFromAccountStats(stats []store.AccountModelStat) []store.C
 		}
 		left := result[i]
 		right := result[j]
+		if left.BucketMS != right.BucketMS {
+			return left.BucketMS < right.BucketMS
+		}
 		return strings.Join([]string{left.AuthIndex, left.Model, left.BillingModel, left.PricingModel, left.ServiceTier}, "\x00") <
 			strings.Join([]string{right.AuthIndex, right.Model, right.BillingModel, right.PricingModel, right.ServiceTier}, "\x00")
 	})
@@ -4627,7 +4633,7 @@ func costForTimelinePoint(point store.TimelinePoint, prices map[string]store.Mod
 }
 
 func costForHeatmapPoint(point store.HeatmapPoint, prices map[string]store.ModelPrice) float64 {
-	return pricing.CostForModelCandidatesWithServiceTier([]string{point.BillingModel, point.Model}, point.ServiceTier, pricing.ModelTokens{
+	return pricing.CostForModelCandidatesWithServiceTierAtTime([]string{point.BillingModel, point.Model}, point.ServiceTier, pricing.ModelTokens{
 		PricingModel:            point.PricingModel,
 		ContextThresholdTokens:  point.ContextThresholdTokens,
 		InputTokens:             point.InputTokens,
@@ -4640,11 +4646,11 @@ func costForHeatmapPoint(point store.HeatmapPoint, prices map[string]store.Model
 		LongCachedTokens:        point.LongCachedTokens,
 		LongCacheReadTokens:     point.LongCacheReadTokens,
 		LongCacheCreationTokens: point.LongCacheCreationTokens,
-	}, prices)
+	}, prices, point.BucketMS)
 }
 
 func costForChannelStat(stat store.ChannelModelStat, prices map[string]store.ModelPrice) float64 {
-	return pricing.CostForModelCandidatesWithServiceTier([]string{stat.BillingModel, stat.Model}, stat.ServiceTier, pricing.ModelTokens{
+	return pricing.CostForModelCandidatesWithServiceTierAtTime([]string{stat.BillingModel, stat.Model}, stat.ServiceTier, pricing.ModelTokens{
 		PricingModel:            stat.PricingModel,
 		ContextThresholdTokens:  stat.ContextThresholdTokens,
 		InputTokens:             stat.InputTokens,
@@ -4657,7 +4663,7 @@ func costForChannelStat(stat store.ChannelModelStat, prices map[string]store.Mod
 		LongCachedTokens:        stat.LongCachedTokens,
 		LongCacheReadTokens:     stat.LongCacheReadTokens,
 		LongCacheCreationTokens: stat.LongCacheCreationTokens,
-	}, prices)
+	}, prices, stat.BucketMS)
 }
 
 func costForAccountModelStat(stat store.AccountModelStat, prices map[string]store.ModelPrice) float64 {

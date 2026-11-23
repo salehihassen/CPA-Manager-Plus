@@ -139,15 +139,15 @@ func (r *repository) LoadModelStats(ctx context.Context, filter AnalyticsFilter)
 				else coalesce(nullif(base_events.resolved_model, ''), base_events.analytics_model)
 			end as pricing_model_value
 		from base_events
-		left join model_prices billing_price on billing_price.model = coalesce(nullif(base_events.resolved_model, ''), base_events.analytics_model)
-		left join model_prices analytics_price on analytics_price.model = base_events.analytics_model
-		left join model_prices display_price on display_price.model = base_events.model
+		left join model_price_band_models billing_price on billing_price.model = coalesce(nullif(base_events.resolved_model, ''), base_events.analytics_model)
+		left join model_price_band_models analytics_price on analytics_price.model = base_events.analytics_model
+		left join model_price_band_models display_price on display_price.model = base_events.model
 	), banded_events as (
 		select
 			priced_events.*,
 			coalesce((
 				select max(tier.threshold_tokens)
-				from model_price_context_tiers tier
+				from model_price_band_thresholds tier
 				where tier.model = priced_events.pricing_model_value
 					and priced_events.normalized_total_input_tokens > tier.threshold_tokens
 			), %d) as context_threshold_tokens_value

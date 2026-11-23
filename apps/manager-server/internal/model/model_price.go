@@ -1,6 +1,7 @@
 package model
 
 type ModelPrice struct {
+	Retired                 bool                    `json:"retired,omitempty"`
 	Prompt                  float64                 `json:"prompt"`
 	Completion              float64                 `json:"completion"`
 	Cache                   float64                 `json:"cache"`
@@ -41,9 +42,9 @@ type ModelUsageSummary struct {
 	Models        []ModelUsageStat `json:"models"`
 }
 
-
 // ModelPriceVersion is an immutable price rule effective from a UTC timestamp.
 type ModelPriceVersion struct {
+	Retired         bool       `json:"retired,omitempty"`
 	EffectiveFromMS int64      `json:"effectiveFromMs"`
 	Price           ModelPrice `json:"price"`
 }

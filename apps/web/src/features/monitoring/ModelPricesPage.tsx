@@ -205,7 +205,13 @@ export function ModelPricesPage() {
 
   const savePrices = async (prices: Parameters<typeof setModelPrices>[0]) => {
     try {
-      await setModelPrices(prices);
+      const payload = Object.fromEntries(
+        Object.entries(prices).map(([name, value]) => {
+          const { history: _history, ...price } = value;
+          return [name, price];
+        })
+      );
+      await setModelPrices(payload);
       return true;
     } catch (error) {
       const key =
@@ -247,7 +253,7 @@ export function ModelPricesPage() {
       return;
     }
     const effectiveFromMs = new Date(effectiveFrom).getTime();
-    if (!Number.isFinite(effectiveFromMs) || effectiveFromMs < 0) {
+    if (!Number.isFinite(effectiveFromMs) || effectiveFromMs < 0 || effectiveFromMs % 3_600_000 !== 0) {
       showNotification(t('model_prices.invalid_effective_date'), 'warning');
       return;
     }
@@ -327,7 +333,7 @@ export function ModelPricesPage() {
 
   const openManualEditor = (model = '', price = modelPrices[model]) => {
     const now = new Date();
-    now.setSeconds(0, 0);
+    now.setTime(Math.ceil(now.getTime() / 3_600_000) * 3_600_000);
     setEffectiveFrom(new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16));
     setDraft(createPriceDraft(model, price));
     setManualEditorOpen(true);
@@ -507,9 +513,9 @@ export function ModelPricesPage() {
                   {(modelPrices[draft.model]?.history ?? []).map((version) => (
                     <li key={version.effectiveFromMs}>
                       {version.effectiveFromMs === 0
-                        ? 'Before any price update'
+                        ? t('model_prices.price_history_epoch')
                         : new Intl.DateTimeFormat(i18n?.language || 'en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(version.effectiveFromMs)}
-                      {' · ' + (version.price.promptConfigured ? version.price.prompt.toFixed(4) : 'unpriced') + '/1M'}
+                      {' · ' + (version.price.promptConfigured || version.price.prompt > 0 ? version.price.prompt.toFixed(4) : t('model_prices.price_history_unpriced')) + '/1M'}
                     </li>
                   ))}
                 </ul>

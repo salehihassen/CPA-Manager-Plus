@@ -25,8 +25,14 @@ type HeaderSnapshot = usageevent.HeaderSnapshot
 type AccountWindowUsageQuery = usageevent.AccountWindowUsageQuery
 type AccountWindowModelStat = usageevent.AccountWindowModelStat
 
-func currentStructureRevision(ctx context.Context, db usagepricing.RowQuerier) (string, error) {
-	return usagepricing.StructureRevision(ctx, db)
+// StatsStructureRevision identifies the pricing partition and hourly stats layout.
+func StatsStructureRevision(ctx context.Context, db usagepricing.RowQuerier) (string, error) {
+	revision, err := usagepricing.StructureRevision(ctx, db)
+	if err != nil {
+		return "", err
+	}
+	// Rebuild former daily rows before using them for hourly historical pricing.
+	return "hourly-stats-v1:" + revision, nil
 }
 
 func floorDayMS(value int64) int64 {

@@ -261,7 +261,7 @@ func TestModelPriceAddModelRejectedAfterRawDeletion(t *testing.T) {
 }
 
 // Test P1-6：raw deletion 后删除 model
-func TestModelPriceDeleteModelRejectedAfterRawDeletion(t *testing.T) {
+func TestModelPriceRetirementPreservesBandsAfterRawDeletion(t *testing.T) {
 	ctx := context.Background()
 	db, repo := openTestDB(t)
 
@@ -279,16 +279,16 @@ func TestModelPriceDeleteModelRejectedAfterRawDeletion(t *testing.T) {
 		"model-a": {Prompt: 1.0, Completion: 2.0},
 	}
 	err := repo.ReplaceAll(ctx, candidatePrices)
-	if !errors.Is(err, modelprice.ErrStructureChangeAfterRawDeletion) {
-		t.Fatalf("expected ErrStructureChangeAfterRawDeletion, got %v", err)
+	if err != nil {
+		t.Fatalf("retirement must retain the partition: %v", err)
 	}
 
 	persisted, err := repo.LoadAll(ctx)
 	if err != nil {
 		t.Fatalf("LoadAll: %v", err)
 	}
-	if len(persisted) != 2 {
-		t.Fatalf("expected 2 models persisted, got %d", len(persisted))
+	if len(persisted) != 1 {
+		t.Fatalf("expected 1 live model persisted, got %d", len(persisted))
 	}
 }
 
@@ -546,7 +546,6 @@ func TestModelPriceUpsertSyncedManualPriceAndNewModelRejectedWithRawDeletion(t *
 	}
 }
 
-
 func TestModelPriceStructureChangeAllowedAfterRawDeletionWithRetainedProjection(t *testing.T) {
 	ctx := context.Background()
 	db, repo := openTestDB(t)
@@ -602,7 +601,6 @@ func TestModelPriceUpsertSyncedStructureChangeAllowedAfterRawDeletionWithRetaine
 		t.Fatalf("expected model-b to be persisted")
 	}
 }
-
 
 func TestModelPriceStructureChangePreservesRetainedVerifierSystemError(t *testing.T) {
 	ctx := context.Background()

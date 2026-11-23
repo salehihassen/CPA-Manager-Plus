@@ -844,7 +844,7 @@ func costForStat(stat store.ModelStat, prices map[string]store.ModelPrice) float
 }
 
 func costForChannelStat(stat store.ChannelModelStat, prices map[string]store.ModelPrice) float64 {
-	return pricing.CostForModelCandidatesWithServiceTier([]string{stat.BillingModel, stat.Model}, stat.ServiceTier, pricing.ModelTokens{
+	return pricing.CostForModelCandidatesWithServiceTierAtTime([]string{stat.BillingModel, stat.Model}, stat.ServiceTier, pricing.ModelTokens{
 		PricingModel:            stat.PricingModel,
 		ContextThresholdTokens:  stat.ContextThresholdTokens,
 		InputTokens:             stat.InputTokens,
@@ -857,7 +857,7 @@ func costForChannelStat(stat store.ChannelModelStat, prices map[string]store.Mod
 		LongCachedTokens:        stat.LongCachedTokens,
 		LongCacheReadTokens:     stat.LongCacheReadTokens,
 		LongCacheCreationTokens: stat.LongCacheCreationTokens,
-	}, prices)
+	}, prices, stat.BucketMS)
 }
 
 func rate(part, total int64) float64 {

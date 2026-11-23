@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
-	sqliteutil "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/sqliteutil"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usageprojection"
+	sqliteutil "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/sqliteutil"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/usage"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/usageidentity"
 )
@@ -477,8 +477,8 @@ type RowQuerier interface {
 
 func StructureRevision(ctx context.Context, db RowQuerier) (string, error) {
 	rows, err := db.QueryContext(ctx, `select p.model, t.threshold_tokens
-		from model_prices p
-		left join model_price_context_tiers t on t.model = p.model
+		from model_price_band_models p
+		left join model_price_band_thresholds t on t.model = p.model
 		order by p.model, t.threshold_tokens`)
 	if err != nil {
 		return "", err
@@ -577,15 +577,15 @@ func bandedEventsFromSourceCTE(whereClause, source string) string {
 				else billing_model_value
 			end as pricing_model_value
 		from base_events
-		left join model_prices billing_price on billing_price.model = base_events.billing_model_value
-		left join model_prices analytics_price on analytics_price.model = base_events.analytics_model_value
-		left join model_prices display_price on display_price.model = base_events.requested_model_value
+		left join model_price_band_models billing_price on billing_price.model = base_events.billing_model_value
+		left join model_price_band_models analytics_price on analytics_price.model = base_events.analytics_model_value
+		left join model_price_band_models display_price on display_price.model = base_events.requested_model_value
 	), banded_events as (
 		select
 			priced_events.*,
 			coalesce((
 				select max(tier.threshold_tokens)
-				from model_price_context_tiers tier
+				from model_price_band_thresholds tier
 				where tier.model = priced_events.pricing_model_value
 					and priced_events.normalized_input_tokens_value > tier.threshold_tokens
 			), %d) as context_threshold_tokens_value

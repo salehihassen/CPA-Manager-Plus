@@ -38,15 +38,15 @@ func pricingBandedUsageEventsCTEWithBaseFilter(baseFilter string) string {
 			else billing_model_value
 		end as pricing_model_value
 	from pricing_base_events
-	left join model_prices billing_price on billing_price.model = pricing_base_events.billing_model_value
-	left join model_prices analytics_price on analytics_price.model = pricing_base_events.analytics_model_value
-	left join model_prices display_price on display_price.model = pricing_base_events.requested_model_value
+	left join model_price_band_models billing_price on billing_price.model = pricing_base_events.billing_model_value
+	left join model_price_band_models analytics_price on analytics_price.model = pricing_base_events.analytics_model_value
+	left join model_price_band_models display_price on display_price.model = pricing_base_events.requested_model_value
 ), banded_usage_events as (
 	select
 		pricing_resolved_events.*,
 		coalesce((
 			select max(tier.threshold_tokens)
-			from model_price_context_tiers tier
+			from model_price_band_thresholds tier
 			where tier.model = pricing_resolved_events.pricing_model_value
 				and pricing_resolved_events.normalized_input_tokens_value > tier.threshold_tokens
 		), %d) as context_threshold_tokens_value

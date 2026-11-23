@@ -2917,11 +2917,11 @@
     "optional_price_placeholder": "Auto when blank",
     "empty": "No matching model prices",
     "effective_from_label": "Apply new price from",
-    "effective_from_hint": "Defaults to now. Older usage keeps the rate active at that time. Choose an earlier date only to correct known past rates.",
+    "effective_from_hint": "Defaults to the next whole UTC hour so earlier usage keeps its rate. Only the latest version can be corrected; later scheduling is unavailable.",
     "price_history_title": "Price history",
     "price_history_epoch": "Initial price",
     "price_history_unpriced": "Unpriced from this point",
-    "invalid_effective_date": "Choose a valid date and time for the new price."
+    "invalid_effective_date": "Choose a whole UTC hour, no later than the next hour."
   },
   "usage_stats": {
     "title": "Usage Statistics",
