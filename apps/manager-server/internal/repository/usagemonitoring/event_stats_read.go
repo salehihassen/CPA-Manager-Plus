@@ -111,38 +111,16 @@ func (r *repository) LoadModelStats(ctx context.Context, filter AnalyticsFilter)
 	if err != nil || !available {
 		return nil, state, available, err
 	}
-	statsState, revision, dailyAvailable, err := statsReadState(ctx, tx)
-	if err != nil {
-		return nil, state, false, err
-	}
-	if dailyAvailable && SupportsStatsFilter(filter) {
-		stats, err := loadDailyModelStats(
-			ctx,
-			tx,
-			statsState,
-			state.CoverageEventID,
-			projectionComplete,
-			revision,
-			filter,
-		)
-		if err != nil {
-			return nil, state, false, err
-		}
-		if err := tx.Commit(); err != nil {
-			return nil, state, false, err
-		}
-		return stats, state, true, nil
-	}
 
 	source, args := filteredEventSourceSQL(
 		filter,
 		state.CoverageEventID,
-		`p.requested_model as model, p.analytics_model, p.resolved_model, p.service_tier, p.failed,
+		`p.requested_model as model, p.analytics_model, p.resolved_model, p.service_tier, p.failed, p.timestamp_ms,
 		p.normalized_total_input_tokens, p.output_tokens, p.reasoning_tokens,
 		p.cached_tokens, p.cache_tokens, p.cache_read_tokens,
 		p.cache_creation_tokens, p.total_tokens`,
 		usageidentity.SQLEffectiveRequestedModelExpression("e.model", "e.requested_model")+`, `+usageidentity.SQLRequestAnalyticsModelExpression("e.model", "e.requested_model")+`, coalesce(e.resolved_model, ''),
-		coalesce(e.service_tier, ''), coalesce(e.failed, 0),
+		coalesce(e.service_tier, ''), coalesce(e.failed, 0), e.timestamp_ms,
 		coalesce(e.normalized_total_input_tokens, e.input_tokens, 0),
 		coalesce(e.output_tokens, 0), coalesce(e.reasoning_tokens, 0),
 		coalesce(e.cached_tokens, 0), coalesce(e.cache_tokens, 0),
@@ -161,22 +139,22 @@ func (r *repository) LoadModelStats(ctx context.Context, filter AnalyticsFilter)
 				else coalesce(nullif(base_events.resolved_model, ''), base_events.analytics_model)
 			end as pricing_model_value
 		from base_events
-		left join model_prices billing_price on billing_price.model = coalesce(nullif(base_events.resolved_model, ''), base_events.analytics_model)
-		left join model_prices analytics_price on analytics_price.model = base_events.analytics_model
-		left join model_prices display_price on display_price.model = base_events.model
+		left join model_price_band_models billing_price on billing_price.model = coalesce(nullif(base_events.resolved_model, ''), base_events.analytics_model)
+		left join model_price_band_models analytics_price on analytics_price.model = base_events.analytics_model
+		left join model_price_band_models display_price on display_price.model = base_events.model
 	), banded_events as (
 		select
 			priced_events.*,
 			coalesce((
 				select max(tier.threshold_tokens)
-				from model_price_context_tiers tier
+				from model_price_band_thresholds tier
 				where tier.model = priced_events.pricing_model_value
 					and priced_events.normalized_total_input_tokens > tier.threshold_tokens
 			), %d) as context_threshold_tokens_value
 		from priced_events
 	)
 	select
-			analytics_model,
+		 timestamp_ms - (timestamp_ms %% 3600000) as bucket_ms, analytics_model,
 		billing_model_value,
 		pricing_model_value,
 		context_threshold_tokens_value,
@@ -194,11 +172,11 @@ func (r *repository) LoadModelStats(ctx context.Context, filter AnalyticsFilter)
 		coalesce(sum(case when normalized_total_input_tokens > %[3]d then max(max(cached_tokens, cache_tokens) - max(cache_read_tokens, 0) - max(cache_creation_tokens, 0), 0) else 0 end), 0),
 		coalesce(sum(case when normalized_total_input_tokens > %[3]d then cache_read_tokens else 0 end), 0),
 		coalesce(sum(case when normalized_total_input_tokens > %[3]d then cache_creation_tokens else 0 end), 0),
-		coalesce(sum(total_tokens), 0)
+		coalesce(sum(total_tokens), 0), coalesce(sum(case when total_tokens=0 and failed=0 then 1 else 0 end),0)
 	from banded_events
-		group by analytics_model, billing_model_value, pricing_model_value,
+		group by bucket_ms, analytics_model, billing_model_value, pricing_model_value,
 		context_threshold_tokens_value, service_tier
-	order by count(*) desc`, source, model.ModelPriceBaseContextThreshold, usage.LongContextInputTokenThreshold)
+	order by count(*) desc, analytics_model, pricing_model_value, context_threshold_tokens_value, bucket_ms`, source, model.ModelPriceBaseContextThreshold, usage.LongContextInputTokenThreshold)
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, state, false, err
@@ -208,6 +186,7 @@ func (r *repository) LoadModelStats(ctx context.Context, filter AnalyticsFilter)
 	for rows.Next() {
 		var stat ModelStat
 		if err := rows.Scan(
+			&stat.BucketMS,
 			&stat.Model,
 			&stat.BillingModel,
 			&stat.PricingModel,
@@ -226,7 +205,7 @@ func (r *repository) LoadModelStats(ctx context.Context, filter AnalyticsFilter)
 			&stat.LongCachedTokens,
 			&stat.LongCacheReadTokens,
 			&stat.LongCacheCreationTokens,
-			&stat.TotalTokens,
+			&stat.TotalTokens, &stat.ZeroTokenCalls,
 		); err != nil {
 			return nil, state, false, err
 		}

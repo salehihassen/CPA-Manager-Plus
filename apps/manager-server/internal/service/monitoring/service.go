@@ -282,20 +282,21 @@ type AccountHistoryCheckpointState struct {
 }
 
 type AccountHistoryItem struct {
-	RowKey         string                 `json:"row_key"`
-	AccountKey     string                 `json:"account_key"`
-	Matched        bool                   `json:"matched"`
-	TotalRequests  int64                  `json:"total_requests"`
-	SuccessCalls   int64                  `json:"success_calls"`
-	FailureCalls   int64                  `json:"failure_calls"`
-	TotalTokens    int64                  `json:"total_tokens"`
-	TotalCost      *float64               `json:"total_cost"`
-	SuccessRate    *float64               `json:"success_rate"`
-	FirstSeenMS    *int64                 `json:"first_seen_ms"`
-	LastSeenMS     *int64                 `json:"last_seen_ms"`
-	LatestRequest  *AccountLatestRequest  `json:"latest_request,omitempty"`
-	RecentRequests []AccountLatestRequest `json:"recent_requests,omitempty"`
-	SyncStatus     string                 `json:"sync_status"`
+	PricingCoverage pricing.Coverage       `json:"pricing_coverage"`
+	RowKey          string                 `json:"row_key"`
+	AccountKey      string                 `json:"account_key"`
+	Matched         bool                   `json:"matched"`
+	TotalRequests   int64                  `json:"total_requests"`
+	SuccessCalls    int64                  `json:"success_calls"`
+	FailureCalls    int64                  `json:"failure_calls"`
+	TotalTokens     int64                  `json:"total_tokens"`
+	TotalCost       *float64               `json:"total_cost"`
+	SuccessRate     *float64               `json:"success_rate"`
+	FirstSeenMS     *int64                 `json:"first_seen_ms"`
+	LastSeenMS      *int64                 `json:"last_seen_ms"`
+	LatestRequest   *AccountLatestRequest  `json:"latest_request,omitempty"`
+	RecentRequests  []AccountLatestRequest `json:"recent_requests,omitempty"`
+	SyncStatus      string                 `json:"sync_status"`
 }
 
 // AccountLatestRequest is the most recent persisted request for an auth file.
@@ -399,53 +400,55 @@ type AccountWindowUsageResponse struct {
 }
 
 type AccountWindowUsageItem struct {
-	RequestKey        string   `json:"request_key"`
-	RowKey            string   `json:"row_key"`
-	WindowKey         string   `json:"window_key,omitempty"`
-	ProviderWindowID  string   `json:"provider_window_id"`
-	Period            string   `json:"period"`
-	FromMS            int64    `json:"from_ms"`
-	ToMS              int64    `json:"to_ms"`
-	Matched           bool     `json:"matched"`
-	TotalRequests     int64    `json:"total_requests"`
-	SuccessCalls      int64    `json:"success_calls"`
-	FailureCalls      int64    `json:"failure_calls"`
-	TotalTokens       int64    `json:"total_tokens"`
-	TotalCost         float64  `json:"total_cost"`
-	SuccessRate       *float64 `json:"success_rate"`
-	LastSeenMS        *int64   `json:"last_seen_ms"`
-	SyncStatus        string   `json:"sync_status"`
-	ScopeMatchStatus  string   `json:"scope_match_status"`
-	UnmatchedRequests int64    `json:"unmatched_requests"`
+	PricingCoverage   pricing.Coverage `json:"pricing_coverage"`
+	RequestKey        string           `json:"request_key"`
+	RowKey            string           `json:"row_key"`
+	WindowKey         string           `json:"window_key,omitempty"`
+	ProviderWindowID  string           `json:"provider_window_id"`
+	Period            string           `json:"period"`
+	FromMS            int64            `json:"from_ms"`
+	ToMS              int64            `json:"to_ms"`
+	Matched           bool             `json:"matched"`
+	TotalRequests     int64            `json:"total_requests"`
+	SuccessCalls      int64            `json:"success_calls"`
+	FailureCalls      int64            `json:"failure_calls"`
+	TotalTokens       int64            `json:"total_tokens"`
+	TotalCost         float64          `json:"total_cost"`
+	SuccessRate       *float64         `json:"success_rate"`
+	LastSeenMS        *int64           `json:"last_seen_ms"`
+	SyncStatus        string           `json:"sync_status"`
+	ScopeMatchStatus  string           `json:"scope_match_status"`
+	UnmatchedRequests int64            `json:"unmatched_requests"`
 }
 
 type Summary struct {
-	TotalCalls            int64    `json:"total_calls"`
-	SuccessCalls          int64    `json:"success_calls"`
-	FailureCalls          int64    `json:"failure_calls"`
-	SuccessRate           float64  `json:"success_rate"`
-	InputTokens           int64    `json:"input_tokens"`
-	OutputTokens          int64    `json:"output_tokens"`
-	CachedTokens          int64    `json:"cached_tokens"`
-	CacheReadTokens       int64    `json:"cache_read_tokens"`
-	CacheCreationTokens   int64    `json:"cache_creation_tokens"`
-	CacheHitRate          float64  `json:"cache_hit_rate"`
-	ReasoningTokens       int64    `json:"reasoning_tokens"`
-	TotalTokens           int64    `json:"total_tokens"`
-	TotalCost             float64  `json:"total_cost"`
-	AverageCostPerCall    float64  `json:"average_cost_per_call"`
-	AverageLatencyMS      *float64 `json:"average_latency_ms"`
-	P95LatencyMS          *float64 `json:"p95_latency_ms"`
-	P95TTFTMS             *float64 `json:"p95_ttft_ms"`
-	ZeroTokenCalls        int64    `json:"zero_token_calls"`
-	RPM30M                float64  `json:"rpm_30m"`
-	TPM30M                float64  `json:"tpm_30m"`
-	AvgDailyRequests      float64  `json:"avg_daily_requests"`
-	AvgDailyTokens        float64  `json:"avg_daily_tokens"`
-	ApproxTasks           int64    `json:"approx_tasks"`
-	ApproxTaskFailures    int64    `json:"approx_task_failures"`
-	ApproxTaskSuccessRate float64  `json:"approx_task_success_rate"`
-	ZeroTokenModels       []string `json:"zero_token_models"`
+	PricingCoverage       pricing.Coverage `json:"pricing_coverage"`
+	TotalCalls            int64            `json:"total_calls"`
+	SuccessCalls          int64            `json:"success_calls"`
+	FailureCalls          int64            `json:"failure_calls"`
+	SuccessRate           float64          `json:"success_rate"`
+	InputTokens           int64            `json:"input_tokens"`
+	OutputTokens          int64            `json:"output_tokens"`
+	CachedTokens          int64            `json:"cached_tokens"`
+	CacheReadTokens       int64            `json:"cache_read_tokens"`
+	CacheCreationTokens   int64            `json:"cache_creation_tokens"`
+	CacheHitRate          float64          `json:"cache_hit_rate"`
+	ReasoningTokens       int64            `json:"reasoning_tokens"`
+	TotalTokens           int64            `json:"total_tokens"`
+	TotalCost             float64          `json:"total_cost"`
+	AverageCostPerCall    float64          `json:"average_cost_per_call"`
+	AverageLatencyMS      *float64         `json:"average_latency_ms"`
+	P95LatencyMS          *float64         `json:"p95_latency_ms"`
+	P95TTFTMS             *float64         `json:"p95_ttft_ms"`
+	ZeroTokenCalls        int64            `json:"zero_token_calls"`
+	RPM30M                float64          `json:"rpm_30m"`
+	TPM30M                float64          `json:"tpm_30m"`
+	AvgDailyRequests      float64          `json:"avg_daily_requests"`
+	AvgDailyTokens        float64          `json:"avg_daily_tokens"`
+	ApproxTasks           int64            `json:"approx_tasks"`
+	ApproxTaskFailures    int64            `json:"approx_task_failures"`
+	ApproxTaskSuccessRate float64          `json:"approx_task_success_rate"`
+	ZeroTokenModels       []string         `json:"zero_token_models"`
 }
 
 // SummaryComparison holds previous-period aggregates computed with the same
@@ -1943,20 +1946,21 @@ func (s *Service) accountHistory(ctx context.Context, req AccountHistoryRequest)
 			successRate = &value
 		}
 		items = append(items, AccountHistoryItem{
-			RowKey:         req.Accounts[index].RowKey,
-			AccountKey:     key,
-			Matched:        true,
-			TotalRequests:  total.requests,
-			SuccessCalls:   total.successCalls,
-			FailureCalls:   total.failureCalls,
-			TotalTokens:    total.totalTokens,
-			TotalCost:      accountHistoryCostPointer(total),
-			SuccessRate:    successRate,
-			FirstSeenMS:    nullableMSPointer(total.firstSeenMS),
-			LastSeenMS:     nullableMSPointer(total.lastSeenMS),
-			LatestRequest:  latestRequest,
-			RecentRequests: targetRecentRequests,
-			SyncStatus:     accountHistorySyncStatus(true, pending),
+			RowKey:          req.Accounts[index].RowKey,
+			AccountKey:      key,
+			Matched:         true,
+			TotalRequests:   total.requests,
+			SuccessCalls:    total.successCalls,
+			FailureCalls:    total.failureCalls,
+			TotalTokens:     total.totalTokens,
+			TotalCost:       accountHistoryCostPointer(total),
+			PricingCoverage: total.coverage,
+			SuccessRate:     successRate,
+			FirstSeenMS:     nullableMSPointer(total.firstSeenMS),
+			LastSeenMS:      nullableMSPointer(total.lastSeenMS),
+			LatestRequest:   latestRequest,
+			RecentRequests:  targetRecentRequests,
+			SyncStatus:      accountHistorySyncStatus(true, pending),
 		})
 	}
 
@@ -2096,6 +2100,7 @@ func (s *Service) accountWindowUsage(ctx context.Context, req AccountWindowUsage
 			FailureCalls:      total.failureCalls,
 			TotalTokens:       total.totalTokens,
 			TotalCost:         total.cost,
+			PricingCoverage:   total.coverage,
 			SuccessRate:       successRate,
 			LastSeenMS:        nullableMSPointer(total.lastSeenMS),
 			SyncStatus:        "ready",
@@ -2358,6 +2363,7 @@ func (s *Service) channelModelStatsWithSource(ctx context.Context, filter store.
 }
 
 type channelModelStatKey struct {
+	bucketMS         int64
 	authIndex        string
 	model            string
 	billingModel     string
@@ -2377,6 +2383,7 @@ func channelModelStatsFromAccountStats(stats []store.AccountModelStat) []store.C
 	grouped := make(map[channelModelStatKey]*channelModelStatAccumulator)
 	for _, stat := range stats {
 		key := channelModelStatKey{
+			bucketMS:         stat.BucketMS,
 			authIndex:        stat.AuthIndex,
 			model:            stat.Model,
 			billingModel:     stat.BillingModel,
@@ -2388,6 +2395,7 @@ func channelModelStatsFromAccountStats(stats []store.AccountModelStat) []store.C
 		if entry == nil {
 			entry = &channelModelStatAccumulator{
 				row: store.ChannelModelStat{
+					BucketMS:     stat.BucketMS,
 					PricingBand:  pricingBandFromAccountStat(stat),
 					AuthIndex:    stat.AuthIndex,
 					Model:        stat.Model,
@@ -2453,6 +2461,9 @@ func channelModelStatsFromAccountStats(stats []store.AccountModelStat) []store.C
 		}
 		left := result[i]
 		right := result[j]
+		if left.BucketMS != right.BucketMS {
+			return left.BucketMS < right.BucketMS
+		}
 		return strings.Join([]string{left.AuthIndex, left.Model, left.BillingModel, left.PricingModel, left.ServiceTier}, "\x00") <
 			strings.Join([]string{right.AuthIndex, right.Model, right.BillingModel, right.PricingModel, right.ServiceTier}, "\x00")
 	})
@@ -2640,7 +2651,12 @@ func buildSummary(agg store.Aggregate, latencySummary store.LatencySummary, roll
 	}
 	approxTasks := int64(len(taskBuckets))
 	totalCost := sumCost(modelStats, prices)
+	var coverage pricing.Coverage
+	for _, stat := range modelStats {
+		coverage.Add(quoteForStat(stat, prices), stat.Calls)
+	}
 	return &Summary{
+		PricingCoverage:       coverage,
 		TotalCalls:            agg.TotalCalls,
 		SuccessCalls:          agg.SuccessCalls,
 		FailureCalls:          agg.FailureCalls,
@@ -4087,6 +4103,7 @@ func buildHeaderSnapshots(items []store.HeaderSnapshot) []HeaderSnapshot {
 }
 
 type accountHistoryTotal struct {
+	coverage      pricing.Coverage
 	requests      int64
 	successCalls  int64
 	failureCalls  int64
@@ -4205,6 +4222,7 @@ func buildUnpricedAccountHistoryTotals(rows []store.AccountHistoryRollupRow) map
 			total = &accountHistoryTotal{}
 			totals[row.AccountKey] = total
 		}
+		total.coverage.Add(pricing.Quote{Status: "unpriced", Reasons: []string{"missing_token_details"}}, row.Calls)
 		total.requests += row.Calls
 		total.successCalls += row.SuccessCalls
 		total.failureCalls += row.FailureCalls
@@ -4231,10 +4249,12 @@ func buildPricingAccountHistoryTotals(rows []store.UsagePricingAccountRow, price
 		total.successCalls += row.SuccessCalls
 		total.failureCalls += row.FailureCalls
 		total.totalTokens += row.TotalTokens
-		total.cost += pricing.CostForModelCandidatesWithServiceTier(
+		quote := pricing.QuoteForModelCandidatesAtTime(
 			[]string{row.BillingModel, row.Model},
 			row.ServiceTier,
 			pricing.ModelTokens{
+				ZeroTokenCalls:          row.ZeroTokenCalls,
+				TotalTokens:             row.TotalTokens,
 				PricingModel:            row.PricingModel,
 				ContextThresholdTokens:  row.ContextThresholdTokens,
 				InputTokens:             row.InputTokens,
@@ -4249,7 +4269,10 @@ func buildPricingAccountHistoryTotals(rows []store.UsagePricingAccountRow, price
 				LongCacheCreationTokens: row.LongCacheCreationTokens,
 			},
 			prices,
+			row.BucketMS,
 		)
+		total.cost += quote.Amount
+		total.coverage.Add(quote, row.Calls)
 		if total.firstSeenMS == 0 || (row.FirstSeenMS > 0 && row.FirstSeenMS < total.firstSeenMS) {
 			total.firstSeenMS = row.FirstSeenMS
 		}
@@ -4277,6 +4300,7 @@ func mergeAliasedAccountHistoryTotals(totals map[string]*accountHistoryTotal, al
 		primary.failureCalls += legacy.failureCalls
 		primary.totalTokens += legacy.totalTokens
 		primary.cost += legacy.cost
+		primary.coverage.Merge(legacy.coverage)
 		primary.costAvailable = primary.costAvailable && legacy.costAvailable
 		if primary.firstSeenMS == 0 || (legacy.firstSeenMS > 0 && legacy.firstSeenMS < primary.firstSeenMS) {
 			primary.firstSeenMS = legacy.firstSeenMS
@@ -4539,10 +4563,12 @@ func buildAccountWindowUsageTotals(rows []store.AccountWindowModelStat, prices m
 		total.successCalls += row.SuccessCalls
 		total.failureCalls += row.FailureCalls
 		total.totalTokens += row.TotalTokens
-		total.cost += pricing.CostForModelCandidatesWithServiceTier(
+		quote := pricing.QuoteForModelCandidatesAtTime(
 			[]string{row.BillingModel, row.Model},
 			row.ServiceTier,
 			pricing.ModelTokens{
+				ZeroTokenCalls:          row.ZeroTokenCalls,
+				TotalTokens:             row.TotalTokens,
 				PricingModel:            row.PricingModel,
 				ContextThresholdTokens:  row.ContextThresholdTokens,
 				InputTokens:             row.InputTokens,
@@ -4557,7 +4583,10 @@ func buildAccountWindowUsageTotals(rows []store.AccountWindowModelStat, prices m
 				LongCacheCreationTokens: row.LongCacheCreationTokens,
 			},
 			prices,
+			row.BucketMS,
 		)
+		total.cost += quote.Amount
+		total.coverage.Add(quote, row.Calls)
 		if row.LastSeenMS > total.lastSeenMS {
 			total.lastSeenMS = row.LastSeenMS
 		}
@@ -4591,7 +4620,12 @@ func sumCost(stats []store.ModelStat, prices map[string]store.ModelPrice) float6
 }
 
 func costForStat(stat store.ModelStat, prices map[string]store.ModelPrice) float64 {
-	return pricing.CostForModelCandidatesWithServiceTier([]string{stat.BillingModel, stat.Model}, stat.ServiceTier, pricing.ModelTokens{
+	return quoteForStat(stat, prices).Amount
+}
+func quoteForStat(stat store.ModelStat, prices map[string]store.ModelPrice) pricing.Quote {
+	return pricing.QuoteForModelCandidatesAtTime([]string{stat.BillingModel, stat.Model}, stat.ServiceTier, pricing.ModelTokens{
+		ZeroTokenCalls:          stat.ZeroTokenCalls,
+		TotalTokens:             stat.TotalTokens,
 		PricingModel:            stat.PricingModel,
 		ContextThresholdTokens:  stat.ContextThresholdTokens,
 		InputTokens:             stat.InputTokens,
@@ -4604,11 +4638,11 @@ func costForStat(stat store.ModelStat, prices map[string]store.ModelPrice) float
 		LongCachedTokens:        stat.LongCachedTokens,
 		LongCacheReadTokens:     stat.LongCacheReadTokens,
 		LongCacheCreationTokens: stat.LongCacheCreationTokens,
-	}, prices)
+	}, prices, stat.BucketMS)
 }
 
 func costForTimelinePoint(point store.TimelinePoint, prices map[string]store.ModelPrice) float64 {
-	return pricing.CostForModelCandidatesWithServiceTier([]string{point.BillingModel, point.Model}, point.ServiceTier, pricing.ModelTokens{
+	return pricing.CostForModelCandidatesWithServiceTierAtTime([]string{point.BillingModel, point.Model}, point.ServiceTier, pricing.ModelTokens{
 		PricingModel:            point.PricingModel,
 		ContextThresholdTokens:  point.ContextThresholdTokens,
 		InputTokens:             point.InputTokens,
@@ -4621,11 +4655,11 @@ func costForTimelinePoint(point store.TimelinePoint, prices map[string]store.Mod
 		LongCachedTokens:        point.LongCachedTokens,
 		LongCacheReadTokens:     point.LongCacheReadTokens,
 		LongCacheCreationTokens: point.LongCacheCreationTokens,
-	}, prices)
+	}, prices, point.BucketMS)
 }
 
 func costForHeatmapPoint(point store.HeatmapPoint, prices map[string]store.ModelPrice) float64 {
-	return pricing.CostForModelCandidatesWithServiceTier([]string{point.BillingModel, point.Model}, point.ServiceTier, pricing.ModelTokens{
+	return pricing.CostForModelCandidatesWithServiceTierAtTime([]string{point.BillingModel, point.Model}, point.ServiceTier, pricing.ModelTokens{
 		PricingModel:            point.PricingModel,
 		ContextThresholdTokens:  point.ContextThresholdTokens,
 		InputTokens:             point.InputTokens,
@@ -4638,11 +4672,11 @@ func costForHeatmapPoint(point store.HeatmapPoint, prices map[string]store.Model
 		LongCachedTokens:        point.LongCachedTokens,
 		LongCacheReadTokens:     point.LongCacheReadTokens,
 		LongCacheCreationTokens: point.LongCacheCreationTokens,
-	}, prices)
+	}, prices, point.BucketMS)
 }
 
 func costForChannelStat(stat store.ChannelModelStat, prices map[string]store.ModelPrice) float64 {
-	return pricing.CostForModelCandidatesWithServiceTier([]string{stat.BillingModel, stat.Model}, stat.ServiceTier, pricing.ModelTokens{
+	return pricing.CostForModelCandidatesWithServiceTierAtTime([]string{stat.BillingModel, stat.Model}, stat.ServiceTier, pricing.ModelTokens{
 		PricingModel:            stat.PricingModel,
 		ContextThresholdTokens:  stat.ContextThresholdTokens,
 		InputTokens:             stat.InputTokens,
@@ -4655,11 +4689,11 @@ func costForChannelStat(stat store.ChannelModelStat, prices map[string]store.Mod
 		LongCachedTokens:        stat.LongCachedTokens,
 		LongCacheReadTokens:     stat.LongCacheReadTokens,
 		LongCacheCreationTokens: stat.LongCacheCreationTokens,
-	}, prices)
+	}, prices, stat.BucketMS)
 }
 
 func costForAccountModelStat(stat store.AccountModelStat, prices map[string]store.ModelPrice) float64 {
-	return pricing.CostForModelCandidatesWithServiceTier([]string{stat.BillingModel, stat.Model}, stat.ServiceTier, pricing.ModelTokens{
+	return pricing.CostForModelCandidatesWithServiceTierAtTime([]string{stat.BillingModel, stat.Model}, stat.ServiceTier, pricing.ModelTokens{
 		PricingModel:            stat.PricingModel,
 		ContextThresholdTokens:  stat.ContextThresholdTokens,
 		InputTokens:             stat.InputTokens,
@@ -4672,11 +4706,11 @@ func costForAccountModelStat(stat store.AccountModelStat, prices map[string]stor
 		LongCachedTokens:        stat.LongCachedTokens,
 		LongCacheReadTokens:     stat.LongCacheReadTokens,
 		LongCacheCreationTokens: stat.LongCacheCreationTokens,
-	}, prices)
+	}, prices, stat.BucketMS)
 }
 
 func costForAPIKeyModelStat(stat store.APIKeyModelStat, prices map[string]store.ModelPrice) float64 {
-	return pricing.CostForModelCandidatesWithServiceTier([]string{stat.BillingModel, stat.Model}, stat.ServiceTier, pricing.ModelTokens{
+	return pricing.CostForModelCandidatesWithServiceTierAtTime([]string{stat.BillingModel, stat.Model}, stat.ServiceTier, pricing.ModelTokens{
 		PricingModel:            stat.PricingModel,
 		ContextThresholdTokens:  stat.ContextThresholdTokens,
 		InputTokens:             stat.InputTokens,
@@ -4689,11 +4723,11 @@ func costForAPIKeyModelStat(stat store.APIKeyModelStat, prices map[string]store.
 		LongCachedTokens:        stat.LongCachedTokens,
 		LongCacheReadTokens:     stat.LongCacheReadTokens,
 		LongCacheCreationTokens: stat.LongCacheCreationTokens,
-	}, prices)
+	}, prices, stat.BucketMS)
 }
 
 func costForCredentialModelStat(stat store.CredentialModelStat, prices map[string]store.ModelPrice) float64 {
-	return pricing.CostForModelCandidatesWithServiceTier([]string{stat.BillingModel, stat.Model}, stat.ServiceTier, pricing.ModelTokens{
+	return pricing.CostForModelCandidatesWithServiceTierAtTime([]string{stat.BillingModel, stat.Model}, stat.ServiceTier, pricing.ModelTokens{
 		PricingModel:            stat.PricingModel,
 		ContextThresholdTokens:  stat.ContextThresholdTokens,
 		InputTokens:             stat.InputTokens,
@@ -4706,11 +4740,11 @@ func costForCredentialModelStat(stat store.CredentialModelStat, prices map[strin
 		LongCachedTokens:        stat.LongCachedTokens,
 		LongCacheReadTokens:     stat.LongCacheReadTokens,
 		LongCacheCreationTokens: stat.LongCacheCreationTokens,
-	}, prices)
+	}, prices, stat.BucketMS)
 }
 
 func costForCredentialTimelinePoint(point store.CredentialTimelinePoint, prices map[string]store.ModelPrice) float64 {
-	return pricing.CostForModelCandidatesWithServiceTier([]string{point.BillingModel, point.Model}, point.ServiceTier, pricing.ModelTokens{
+	return pricing.CostForModelCandidatesWithServiceTierAtTime([]string{point.BillingModel, point.Model}, point.ServiceTier, pricing.ModelTokens{
 		PricingModel:            point.PricingModel,
 		ContextThresholdTokens:  point.ContextThresholdTokens,
 		InputTokens:             point.InputTokens,
@@ -4723,11 +4757,11 @@ func costForCredentialTimelinePoint(point store.CredentialTimelinePoint, prices 
 		LongCachedTokens:        point.LongCachedTokens,
 		LongCacheReadTokens:     point.LongCacheReadTokens,
 		LongCacheCreationTokens: point.LongCacheCreationTokens,
-	}, prices)
+	}, prices, point.BucketMS)
 }
 
 func costForAPIKeyTimelinePoint(point store.APIKeyTimelinePoint, prices map[string]store.ModelPrice) float64 {
-	return pricing.CostForModelCandidatesWithServiceTier([]string{point.BillingModel, point.Model}, point.ServiceTier, pricing.ModelTokens{
+	return pricing.CostForModelCandidatesWithServiceTierAtTime([]string{point.BillingModel, point.Model}, point.ServiceTier, pricing.ModelTokens{
 		PricingModel:            point.PricingModel,
 		ContextThresholdTokens:  point.ContextThresholdTokens,
 		InputTokens:             point.InputTokens,
@@ -4740,7 +4774,7 @@ func costForAPIKeyTimelinePoint(point store.APIKeyTimelinePoint, prices map[stri
 		LongCachedTokens:        point.LongCachedTokens,
 		LongCacheReadTokens:     point.LongCacheReadTokens,
 		LongCacheCreationTokens: point.LongCacheCreationTokens,
-	}, prices)
+	}, prices, point.BucketMS)
 }
 
 func ratio(part int64, total int64) float64 {

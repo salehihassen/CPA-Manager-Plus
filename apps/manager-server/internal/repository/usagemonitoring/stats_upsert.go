@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/usage"
@@ -38,15 +39,15 @@ func monitoringBandedEventsCTE(whereClause string) string {
 				else billing_model_value
 			end as pricing_model_value
 		from base_events
-		left join model_prices billing_price on billing_price.model = base_events.billing_model_value
-		left join model_prices analytics_price on analytics_price.model = base_events.analytics_model_value
-		left join model_prices display_price on display_price.model = base_events.requested_model_value
+		left join model_price_band_models billing_price on billing_price.model = base_events.billing_model_value
+		left join model_price_band_models analytics_price on analytics_price.model = base_events.analytics_model_value
+		left join model_price_band_models display_price on display_price.model = base_events.requested_model_value
 	), banded_events as (
 		select
 			priced_events.*,
 			coalesce((
 				select max(tier.threshold_tokens)
-				from model_price_context_tiers tier
+				from model_price_band_thresholds tier
 				where tier.model = priced_events.pricing_model_value
 					and priced_events.normalized_input_tokens_value > tier.threshold_tokens
 			), %d) as context_threshold_tokens_value
@@ -150,7 +151,7 @@ func upsertAccountDailyBatch(ctx context.Context, tx *sql.Tx, revision string, a
 		latency_samples = usage_monitoring_account_daily_rollups_v1.latency_samples + excluded.latency_samples,
 		last_seen_ms = max(usage_monitoring_account_daily_rollups_v1.last_seen_ms, excluded.last_seen_ms),
 		updated_at_ms = excluded.updated_at_ms`,
-		dayMS,
+		int64(time.Hour/time.Millisecond),
 		usage.LongContextInputTokenThreshold,
 		usage.LongContextInputTokenThreshold,
 		usage.LongContextInputTokenThreshold,
@@ -238,7 +239,7 @@ func upsertAPIKeyDailyBatch(ctx context.Context, tx *sql.Tx, revision string, af
 		latency_samples = usage_monitoring_api_key_daily_rollups_v1.latency_samples + excluded.latency_samples,
 		last_seen_ms = max(usage_monitoring_api_key_daily_rollups_v1.last_seen_ms, excluded.last_seen_ms),
 		updated_at_ms = excluded.updated_at_ms`,
-		dayMS,
+		int64(time.Hour/time.Millisecond),
 		usage.LongContextInputTokenThreshold,
 		usage.LongContextInputTokenThreshold,
 		usage.LongContextInputTokenThreshold,

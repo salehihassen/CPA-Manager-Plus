@@ -48,6 +48,7 @@ func (r *repository) LoadAccountWindowStats(ctx context.Context, windows []Accou
 }
 
 type accountWindowStatKey struct {
+	bucketMS         int64
 	requestIndex     int
 	model            string
 	billingModel     string
@@ -59,7 +60,7 @@ type accountWindowStatKey struct {
 func mergeProjectedAccountWindowStats(ctx context.Context, tx *sql.Tx, windows []AccountWindowUsageQuery, projectionCoverageEventID int64, projectionComplete bool, statsCoverageEventID int64, dailyAvailable bool, grouped map[accountWindowStatKey]*AccountWindowModelStat) error {
 	source, args := accountWindowEventSourceSQL(windows, projectionCoverageEventID, projectionComplete, statsCoverageEventID, dailyAvailable)
 	query := fmt.Sprintf(`%s
-		select request_index, analytics_model, billing_model_value, pricing_model_value,
+		select timestamp_ms - (timestamp_ms %% 3600000), request_index, analytics_model, billing_model_value, pricing_model_value,
 		context_threshold_tokens_value, coalesce(service_tier, ''), count(*),
 		coalesce(sum(case when failed = 0 then 1 else 0 end), 0),
 		coalesce(sum(case when failed = 1 then 1 else 0 end), 0),
@@ -71,9 +72,9 @@ func mergeProjectedAccountWindowStats(ctx context.Context, tx *sql.Tx, windows [
 		coalesce(sum(case when normalized_total_input_tokens > ? then compatible_cached_tokens_value else 0 end), 0),
 		coalesce(sum(case when normalized_total_input_tokens > ? then cache_read_tokens else 0 end), 0),
 		coalesce(sum(case when normalized_total_input_tokens > ? then cache_creation_tokens else 0 end), 0),
-		coalesce(sum(total_tokens), 0), max(timestamp_ms)
+		coalesce(sum(total_tokens), 0), max(timestamp_ms), coalesce(sum(case when total_tokens=0 and failed=0 then 1 else 0 end),0)
 	from banded_events
-	group by request_index, analytics_model, billing_model_value, pricing_model_value,
+	group by timestamp_ms - (timestamp_ms %% 3600000), request_index, analytics_model, billing_model_value, pricing_model_value,
 		context_threshold_tokens_value, coalesce(service_tier, '')`, monitoringBandedProjectedEventsCTE(source))
 	args = appendLongContextThresholdArgs(args)
 	rows, err := tx.QueryContext(ctx, query, args...)
@@ -121,7 +122,7 @@ func mergeStoredAccountWindowStats(ctx context.Context, tx *sql.Tx, revision str
 	request_index, full_start_ms, full_end_ms, auth_file_snapshot, auth_index,
 	account_key, legacy_account_key, codex_member
 ) as (values `+strings.Join(values, ",")+`)
-	select w.request_index, d.model, d.billing_model, d.pricing_model, d.context_threshold_tokens,
+	select d.bucket_ms, w.request_index, d.model, d.billing_model, d.pricing_model, d.context_threshold_tokens,
 		coalesce(d.service_tier, ''), coalesce(sum(d.calls), 0),
 		coalesce(sum(case when d.failed = 0 then d.calls else 0 end), 0),
 		coalesce(sum(case when d.failed = 1 then d.calls else 0 end), 0),
@@ -129,7 +130,7 @@ func mergeStoredAccountWindowStats(ctx context.Context, tx *sql.Tx, revision str
 		coalesce(sum(d.cache_read_tokens), 0), coalesce(sum(d.cache_creation_tokens), 0),
 		coalesce(sum(d.long_input_tokens), 0), coalesce(sum(d.long_output_tokens), 0),
 		coalesce(sum(d.long_cached_tokens), 0), coalesce(sum(d.long_cache_read_tokens), 0),
-		coalesce(sum(d.long_cache_creation_tokens), 0), coalesce(sum(d.total_tokens), 0), max(d.last_seen_ms)
+		coalesce(sum(d.long_cache_creation_tokens), 0), coalesce(sum(d.total_tokens), 0), max(d.last_seen_ms), coalesce(sum(d.zero_token_calls),0)
 	from window_targets w
 	join usage_monitoring_account_daily_rollups_v1 d on d.structure_revision = ?
 		and d.bucket_ms >= w.full_start_ms and d.bucket_ms < w.full_end_ms
@@ -152,7 +153,7 @@ func mergeStoredAccountWindowStats(ctx context.Context, tx *sql.Tx, revision str
 				)
 			)
 		)
-	group by w.request_index, d.model, d.billing_model, d.pricing_model, d.context_threshold_tokens, coalesce(d.service_tier, '')`, args...)
+	group by d.bucket_ms, w.request_index, d.model, d.billing_model, d.pricing_model, d.context_threshold_tokens, coalesce(d.service_tier, '')`, args...)
 	if err != nil {
 		return err
 	}
@@ -163,10 +164,10 @@ func mergeStoredAccountWindowStats(ctx context.Context, tx *sql.Tx, revision str
 func mergeAccountWindowStatRows(rows *sql.Rows, grouped map[accountWindowStatKey]*AccountWindowModelStat) error {
 	for rows.Next() {
 		var stat AccountWindowModelStat
-		if err := rows.Scan(&stat.RequestIndex, &stat.Model, &stat.BillingModel, &stat.PricingModel, &stat.ContextThresholdTokens, &stat.ServiceTier, &stat.Calls, &stat.SuccessCalls, &stat.FailureCalls, &stat.InputTokens, &stat.OutputTokens, &stat.CachedTokens, &stat.CacheReadTokens, &stat.CacheCreationTokens, &stat.LongInputTokens, &stat.LongOutputTokens, &stat.LongCachedTokens, &stat.LongCacheReadTokens, &stat.LongCacheCreationTokens, &stat.TotalTokens, &stat.LastSeenMS); err != nil {
+		if err := rows.Scan(&stat.BucketMS, &stat.RequestIndex, &stat.Model, &stat.BillingModel, &stat.PricingModel, &stat.ContextThresholdTokens, &stat.ServiceTier, &stat.Calls, &stat.SuccessCalls, &stat.FailureCalls, &stat.InputTokens, &stat.OutputTokens, &stat.CachedTokens, &stat.CacheReadTokens, &stat.CacheCreationTokens, &stat.LongInputTokens, &stat.LongOutputTokens, &stat.LongCachedTokens, &stat.LongCacheReadTokens, &stat.LongCacheCreationTokens, &stat.TotalTokens, &stat.LastSeenMS, &stat.ZeroTokenCalls); err != nil {
 			return err
 		}
-		key := accountWindowStatKey{requestIndex: stat.RequestIndex, model: stat.Model, billingModel: stat.BillingModel, pricingModel: stat.PricingModel, contextThreshold: stat.ContextThresholdTokens, serviceTier: stat.ServiceTier}
+		key := accountWindowStatKey{bucketMS: stat.BucketMS, requestIndex: stat.RequestIndex, model: stat.Model, billingModel: stat.BillingModel, pricingModel: stat.PricingModel, contextThreshold: stat.ContextThresholdTokens, serviceTier: stat.ServiceTier}
 		current := grouped[key]
 		if current == nil {
 			copy := stat
@@ -187,6 +188,7 @@ func mergeAccountWindowStatRows(rows *sql.Rows, grouped map[accountWindowStatKey
 		current.LongCacheReadTokens += stat.LongCacheReadTokens
 		current.LongCacheCreationTokens += stat.LongCacheCreationTokens
 		current.TotalTokens += stat.TotalTokens
+		current.ZeroTokenCalls += stat.ZeroTokenCalls
 		current.LastSeenMS = max(current.LastSeenMS, stat.LastSeenMS)
 	}
 	return rows.Err()

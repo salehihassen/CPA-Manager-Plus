@@ -155,7 +155,7 @@ func (r *repository) catchUp(
 	rebuilt := state.CoverageEventID < state.TargetEventID &&
 		(state.Status == "pending" || state.Status == "rebuilding" || state.Status == "clearing")
 	if rollupName == StatsRollupName {
-		revision, err = currentStructureRevision(ctx, tx)
+		revision, err = StatsStructureRevision(ctx, tx)
 	} else if rollupName == ProjectionRollupName {
 		revision = usageidentity.MonitoringProjectionStructureRevision()
 	} else if rollupName == usageevent.CodexLegacyIdentityRollupName {

@@ -1,3 +1,4 @@
+import { formatPricingValue, pricingQualityHint } from '@/utils/pricingQuality';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { JSX } from 'react';
@@ -229,7 +230,8 @@ export function AccountQuotaTab({
             icon={<IconDollarSign size={20} />}
             tone="amber"
             label={t('accounts.detail_total_cost')}
-            value={history?.totalCost != null ? formatUsd(history.totalCost) : '-'}
+            value={history?.totalCost != null ? formatPricingValue(formatUsd(history.totalCost), history.pricingCoverage, t) : '-'}
+            valueTitle={pricingQualityHint(history?.pricingCoverage, t)}
           />
           <MetricCell
             icon={<IconCheck size={20} />}

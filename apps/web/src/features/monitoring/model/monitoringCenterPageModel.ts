@@ -1,3 +1,4 @@
+import { formatPricingValue, pricingQualityHint } from '@/utils/pricingQuality';
 import type { TFunction } from 'i18next';
 import type {
   AntigravityQuotaGroup,
@@ -630,9 +631,9 @@ export const buildPrimarySummaryCards = ({
   {
     label: shortLabel(t, 'monitoring.estimated_cost_short', 'monitoring.estimated_cost'),
     fullLabel: t('monitoring.estimated_cost'),
-    value: hasPrices ? formatUsd(summary.totalCost) : '--',
+    value: hasPrices ? formatPricingValue(formatUsd(summary.totalCost), summary.pricingCoverage, t) : '--',
     valueTitle: hasPrices ? formatUsd(summary.totalCost) : undefined,
-    meta: hasPrices ? t('monitoring.estimated_cost_hint') : t('monitoring.estimated_cost_missing'),
+    meta: hasPrices ? pricingQualityHint(summary.pricingCoverage, t) || t('monitoring.estimated_cost_hint') : t('monitoring.estimated_cost_missing'),
     tone: hasPrices ? undefined : 'warn',
     icon: 'cost',
     accent: 'amber',

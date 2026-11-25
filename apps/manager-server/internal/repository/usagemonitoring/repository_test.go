@@ -921,7 +921,14 @@ func TestAccountWindowProjectionUsesDailyStatsWithEdgesAndRawTail(t *testing.T) 
 	if !reflect.DeepEqual(projected, raw) {
 		t.Fatalf("daily account window mismatch\nprojection=%#v\nraw=%#v", projected, raw)
 	}
-	if len(projected) != 1 || projected[0].Calls != 5 || projected[0].SuccessCalls != 4 || projected[0].FailureCalls != 1 || projected[0].InputTokens != 150 {
+	var calls, successes, failures, input int64
+	for _, row := range projected {
+		calls += row.Calls
+		successes += row.SuccessCalls
+		failures += row.FailureCalls
+		input += row.InputTokens
+	}
+	if len(projected) != 5 || calls != 5 || successes != 4 || failures != 1 || input != 150 {
 		t.Fatalf("daily account window stats = %#v", projected)
 	}
 }
@@ -1524,11 +1531,10 @@ func TestUsageMonitoringStatsRevisionMismatchUsesEventProjectionUntilRebuilt(t *
 }
 
 // TestUsageMonitoringStatsRevisionRollbackDoesNotDoubleCount covers a
-// deterministic A-to-B-to-A revision rollback. The target revision is cleared
-// in bounded batches, readers use raw events while clearing, and rebuilding the
-// restored revision must not add to its retained rows.
+// rate rollback that retains historical bands, followed by interrupted clearing.
+// Readers must remain accurate and rebuilding must not double count target rows.
 func TestUsageMonitoringStatsRevisionRollbackDoesNotDoubleCount(t *testing.T) {
-	_, db := newMonitoringRepositoryStore(t)
+	sqlDB, db := newMonitoringRepositoryStore(t)
 	ctx := context.Background()
 	baseMS := int64(1_800_057_600_000)
 	pricesA := map[string]store.ModelPrice{"gpt-a": {Prompt: 1}}
@@ -1554,12 +1560,28 @@ func TestUsageMonitoringStatsRevisionRollbackDoesNotDoubleCount(t *testing.T) {
 	}
 	catchUpMonitoringRepository(t, ctx, db)
 	assertMonitoringReadersMatchRaw(t, ctx, db, filter)
-	// Restore revision A. A limit of one can clear only the account row in the
-	// first transaction, leaving the API-key row for a later transaction.
+	// Restoring rates keeps the historical band partition.
+	revisionB, err := db.UsageMonitoringState(ctx, monitoringrepo.StatsRollupName)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := db.SaveModelPrices(ctx, pricesA); err != nil {
 		t.Fatalf("rollback to prices A: %v", err)
 	}
-	result, err := db.CatchUpUsageMonitoringStats(ctx, 1, 30_000)
+	result, err := db.CatchUpUsageMonitoringStats(ctx, 1, 29_000)
+	if err != nil || result.Rebuilt || result.Pending {
+		t.Fatalf("historical bands should not rebuild on rollback: %#v err=%v", result, err)
+	}
+	rollbackState, err := db.UsageMonitoringState(ctx, monitoringrepo.StatsRollupName)
+	if err != nil || rollbackState.StructureRevision != revisionB.StructureRevision {
+		t.Fatalf("rollback lost historical bands: %#v err=%v", rollbackState, err)
+	}
+	assertMonitoringReadersMatchRaw(t, ctx, db, filter)
+	// Persist an interrupted clearing pass with both target tables still populated.
+	if _, err := sqlDB.ExecContext(ctx, `update usage_monitoring_rollup_state set status='clearing', coverage_event_id=0, backfill_last_event_id=0, processed_events=0 where rollup_name=?`, monitoringrepo.StatsRollupName); err != nil {
+		t.Fatal(err)
+	}
+	result, err = db.CatchUpUsageMonitoringStats(ctx, 1, 30_000)
 	if err != nil {
 		t.Fatalf("start bounded rollback clearing: %v", err)
 	}
@@ -2495,5 +2517,47 @@ func TestUsageMonitoringUnknownFailureName(t *testing.T) {
 	err := db.RecordUsageMonitoringFailure(context.Background(), "unknown", errors.New(fmt.Sprint("boom")), time.Now().UnixMilli())
 	if err == nil {
 		t.Fatal("unknown rollup name unexpectedly accepted")
+	}
+}
+
+func TestLegacyDailyStatsRevisionRebuildsIntoHourlyRows(t *testing.T) {
+	sqlDB, db := newMonitoringRepositoryStore(t)
+	ctx := context.Background()
+	const baseMS int64 = 1800057600000
+	event := monitoringRepositoryEvent("legacy-daily", baseMS+2*3600000, "gpt-a", "key-a", "alice@example.com", "auth-a", "source-a", false, 150, 10, 10)
+	if _, err := db.InsertEvents(ctx, []usage.Event{event}); err != nil {
+		t.Fatal(err)
+	}
+	catchUpMonitoringRepository(t, ctx, db)
+	state, err := db.UsageMonitoringState(ctx, monitoringrepo.StatsRollupName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyRevision := strings.TrimPrefix(state.StructureRevision, "hourly-stats-v1:")
+	if legacyRevision == state.StructureRevision {
+		t.Fatal("missing hourly stats revision marker")
+	}
+	for _, table := range []string{"usage_monitoring_account_daily_rollups_v1", "usage_monitoring_api_key_daily_rollups_v1"} {
+		if _, err := sqlDB.ExecContext(ctx, "update "+table+" set structure_revision=?, bucket_ms=?", legacyRevision, baseMS); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := sqlDB.ExecContext(ctx, `update usage_monitoring_rollup_state set structure_revision=? where rollup_name=?`, legacyRevision, monitoringrepo.StatsRollupName); err != nil {
+		t.Fatal(err)
+	}
+	filter := store.AnalyticsFilter{FromMS: baseMS, ToMS: baseMS + testDayMS, IncludeFailed: true}
+	// Readers must use the retained event projection until hourly rows are rebuilt.
+	assertMonitoringReadersMatchRaw(t, ctx, db, filter)
+	result, err := db.CatchUpUsageMonitoringStats(ctx, 100, baseMS+testDayMS)
+	if err != nil || !result.Rebuilt || result.Pending {
+		t.Fatalf("hourly upgrade result %#v err=%v", result, err)
+	}
+	assertMonitoringReadersMatchRaw(t, ctx, db, filter)
+	var bucketMS int64
+	if err := sqlDB.QueryRowContext(ctx, `select bucket_ms from usage_monitoring_account_daily_rollups_v1 where structure_revision=?`, state.StructureRevision).Scan(&bucketMS); err != nil {
+		t.Fatal(err)
+	}
+	if bucketMS != baseMS+2*3600000 {
+		t.Fatalf("rebuilt bucket=%d, want event hour", bucketMS)
 	}
 }

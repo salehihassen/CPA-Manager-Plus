@@ -498,6 +498,10 @@ describe('ModelPricesPage Attention UI', () => {
       loading: false,
       modelPrices: {
         'tiered-model': {
+          history: [{
+            effectiveFromMs: 1732233600000,
+            price: { prompt: 5, completion: 25, cache: 0.5, promptConfigured: true },
+          }],
           prompt: 5,
           completion: 25,
           cache: 0.5,
@@ -554,15 +558,40 @@ describe('ModelPricesPage Attention UI', () => {
       inputPrice.props.onChange({ target: { value: '6' } });
     });
 
+    await act(async () => {
+      root.findByProps({ 'data-testid': 'effective-from-input' }).props.onChange({
+        target: { value: '2026-01-02T03:00' },
+      });
+    });
     const saveButton = root.findByProps({ 'data-testid': 'save-draft-button' });
+    // A non-hour boundary must not submit a price that hourly buckets cannot represent.
+    await act(async () => {
+      root.findByProps({ 'data-testid': 'effective-from-input' }).props.onChange({
+        target: { value: '2026-01-02T03:04' },
+      });
+    });
+    await act(async () => { saveButton.props.onClick(); });
+    expect(setModelPrices).not.toHaveBeenCalled();
+    await act(async () => {
+      root.findByProps({ 'data-testid': 'effective-from-input' }).props.onChange({
+        target: { value: '2026-01-02T03:00' },
+      });
+    });
     await act(async () => {
       saveButton.props.onClick();
     });
 
+    expect(setModelPrices).not.toHaveBeenCalled();
+    await act(async () => {
+      root.findByProps({ 'data-testid': 'historical-correction-input' }).props.onChange({target:{checked:true}});
+    });
+    await act(async () => { saveButton.props.onClick(); });
     expect(setModelPrices).toHaveBeenCalledWith({
       'tiered-model': expect.objectContaining({
         prompt: 6,
         source: 'manual',
+        effectiveFromMs: new Date('2026-01-02T03:00').getTime(),
+        historicalCorrection: true,
         contextTiers: [
           expect.objectContaining({
             thresholdTokens: 128_000,

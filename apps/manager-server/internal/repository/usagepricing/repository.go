@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
-	sqliteutil "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/sqliteutil"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usageprojection"
+	sqliteutil "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/sqliteutil"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/usage"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/usageidentity"
 )
@@ -96,6 +96,8 @@ type HourlyRow struct {
 }
 
 type AccountRow struct {
+	ZeroTokenCalls int64
+	BucketMS       int64
 	usage.LongContextTokens
 	usage.PricingBand
 	AccountKey           string
@@ -134,6 +136,7 @@ type hourlyKey struct {
 }
 
 type accountKey struct {
+	bucketMS               int64
 	accountKey             string
 	model                  string
 	billingModel           string
@@ -477,8 +480,8 @@ type RowQuerier interface {
 
 func StructureRevision(ctx context.Context, db RowQuerier) (string, error) {
 	rows, err := db.QueryContext(ctx, `select p.model, t.threshold_tokens
-		from model_prices p
-		left join model_price_context_tiers t on t.model = p.model
+		from model_price_band_models p
+		left join model_price_band_thresholds t on t.model = p.model
 		order by p.model, t.threshold_tokens`)
 	if err != nil {
 		return "", err
@@ -500,7 +503,7 @@ func StructureRevision(ctx context.Context, db RowQuerier) (string, error) {
 	if err := rows.Err(); err != nil {
 		return "", err
 	}
-	return usageidentity.PricingStructureRevision(model.ModelPriceStructureRevision(prices)), nil
+	return "hourly-accounts-1:" + usageidentity.PricingStructureRevision(model.ModelPriceStructureRevision(prices)), nil
 }
 
 func latestEventID(ctx context.Context, tx *sql.Tx) (int64, error) {
@@ -577,15 +580,15 @@ func bandedEventsFromSourceCTE(whereClause, source string) string {
 				else billing_model_value
 			end as pricing_model_value
 		from base_events
-		left join model_prices billing_price on billing_price.model = base_events.billing_model_value
-		left join model_prices analytics_price on analytics_price.model = base_events.analytics_model_value
-		left join model_prices display_price on display_price.model = base_events.requested_model_value
+		left join model_price_band_models billing_price on billing_price.model = base_events.billing_model_value
+		left join model_price_band_models analytics_price on analytics_price.model = base_events.analytics_model_value
+		left join model_price_band_models display_price on display_price.model = base_events.requested_model_value
 	), banded_events as (
 		select
 			priced_events.*,
 			coalesce((
 				select max(tier.threshold_tokens)
-				from model_price_context_tiers tier
+				from model_price_band_thresholds tier
 				where tier.model = priced_events.pricing_model_value
 					and priced_events.normalized_input_tokens_value > tier.threshold_tokens
 			), %d) as context_threshold_tokens_value
@@ -667,10 +670,10 @@ func upsertHourlyBatch(ctx context.Context, tx *sql.Tx, source, revision string,
 func upsertAccountBatch(ctx context.Context, tx *sql.Tx, source, revision string, afterID, throughID, nowMS int64) error {
 	query := bandedEventsFromSourceCTE("e.id > ? and e.id <= ?", source) + fmt.Sprintf(`
 	insert into usage_pricing_account_rollups_v1 (
-		structure_revision, account_key, account_snapshot, auth_label_snapshot,
+		structure_revision, bucket_ms, account_key, account_snapshot, auth_label_snapshot,
 		auth_provider_snapshot, auth_index, source, source_hash, model,
 		billing_model, pricing_model, service_tier, context_threshold_tokens,
-		calls, success_calls, failure_calls, input_tokens, output_tokens,
+		calls, success_calls, failure_calls, zero_token_calls, input_tokens, output_tokens,
 		reasoning_tokens, cached_tokens, cache_read_tokens, cache_creation_tokens,
 		long_input_tokens, long_output_tokens, long_cached_tokens,
 		long_cache_read_tokens, long_cache_creation_tokens, total_tokens,
@@ -678,6 +681,7 @@ func upsertAccountBatch(ctx context.Context, tx *sql.Tx, source, revision string
 	)
 	select
 		?,
+		timestamp_ms - (timestamp_ms %% 3600000),
 		account_key_value,
 		max(nullif(account_snapshot, '')),
 		max(nullif(auth_label_snapshot, '')),
@@ -693,6 +697,7 @@ func upsertAccountBatch(ctx context.Context, tx *sql.Tx, source, revision string
 		count(*),
 		coalesce(sum(case when failed = 0 then 1 else 0 end), 0),
 		coalesce(sum(case when failed = 1 then 1 else 0 end), 0),
+		coalesce(sum(case when total_tokens=0 and failed=0 then 1 else 0 end),0),
 		coalesce(sum(normalized_input_tokens_value), 0),
 		coalesce(sum(output_tokens), 0),
 		coalesce(sum(reasoning_tokens), 0),
@@ -710,10 +715,10 @@ func upsertAccountBatch(ctx context.Context, tx *sql.Tx, source, revision string
 			?
 		from banded_events
 		where account_key_value <> ''
-		group by account_key_value, analytics_model_value, billing_model_value, pricing_model_value,
+		group by timestamp_ms - (timestamp_ms %% 3600000), account_key_value, analytics_model_value, billing_model_value, pricing_model_value,
 		coalesce(service_tier, ''), context_threshold_tokens_value
 		on conflict(
-			structure_revision, account_key, model, billing_model, pricing_model,
+			structure_revision, bucket_ms, account_key, model, billing_model, pricing_model,
 			service_tier, context_threshold_tokens
 	) do update set
 		account_snapshot = coalesce(nullif(excluded.account_snapshot, ''), usage_pricing_account_rollups_v1.account_snapshot),
@@ -726,6 +731,7 @@ func upsertAccountBatch(ctx context.Context, tx *sql.Tx, source, revision string
 		calls = usage_pricing_account_rollups_v1.calls + excluded.calls,
 		success_calls = usage_pricing_account_rollups_v1.success_calls + excluded.success_calls,
 		failure_calls = usage_pricing_account_rollups_v1.failure_calls + excluded.failure_calls,
+		zero_token_calls = usage_pricing_account_rollups_v1.zero_token_calls + excluded.zero_token_calls,
 		input_tokens = usage_pricing_account_rollups_v1.input_tokens + excluded.input_tokens,
 		output_tokens = usage_pricing_account_rollups_v1.output_tokens + excluded.output_tokens,
 		reasoning_tokens = usage_pricing_account_rollups_v1.reasoning_tokens + excluded.reasoning_tokens,
@@ -1118,7 +1124,7 @@ func mergeStoredAccountRows(
 		args = append(args, key)
 	}
 	rows, err := tx.QueryContext(ctx, `select
-		account_key,
+		bucket_ms, account_key,
 		coalesce(account_snapshot, ''),
 		coalesce(auth_label_snapshot, ''),
 		coalesce(auth_provider_snapshot, ''),
@@ -1126,7 +1132,7 @@ func mergeStoredAccountRows(
 		coalesce(source, ''),
 		coalesce(source_hash, ''),
 		model, billing_model, pricing_model, service_tier, context_threshold_tokens,
-		calls, success_calls, failure_calls,
+		calls, success_calls, failure_calls, zero_token_calls,
 		input_tokens, output_tokens, reasoning_tokens, cached_tokens,
 		cache_read_tokens, cache_creation_tokens,
 		long_input_tokens, long_output_tokens, long_cached_tokens,
@@ -1175,7 +1181,7 @@ func mergeAccountRowsFromSourceArgs(
 	placeholders := strings.TrimRight(strings.Repeat("?,", len(accountKeys)), ",")
 	query := bandedEventsFromSourceCTE("e.id > ?", source) + fmt.Sprintf(`
 	select
-		account_key_value,
+		timestamp_ms - (timestamp_ms %% 3600000), account_key_value,
 		coalesce(max(nullif(account_snapshot, '')), ''),
 		coalesce(max(nullif(auth_label_snapshot, '')), ''),
 		coalesce(max(nullif(coalesce(nullif(auth_provider_snapshot, ''), provider, ''), '')), ''),
@@ -1187,6 +1193,7 @@ func mergeAccountRowsFromSourceArgs(
 		count(*),
 		coalesce(sum(case when failed = 0 then 1 else 0 end), 0),
 		coalesce(sum(case when failed = 1 then 1 else 0 end), 0),
+		coalesce(sum(case when total_tokens=0 and failed=0 then 1 else 0 end),0),
 		coalesce(sum(normalized_input_tokens_value), 0),
 		coalesce(sum(output_tokens), 0),
 		coalesce(sum(reasoning_tokens), 0),
@@ -1201,7 +1208,7 @@ func mergeAccountRowsFromSourceArgs(
 		coalesce(sum(total_tokens), 0), min(timestamp_ms), max(timestamp_ms), 0
 	from banded_events
 	where account_key_value in (%s)
-		group by account_key_value, analytics_model_value, billing_model_value, pricing_model_value,
+		group by timestamp_ms - (timestamp_ms %% 3600000), account_key_value, analytics_model_value, billing_model_value, pricing_model_value,
 		coalesce(service_tier, ''), context_threshold_tokens_value
 	order by account_key_value, max(timestamp_ms) desc`,
 		usage.LongContextInputTokenThreshold,
@@ -1229,7 +1236,7 @@ func scanAndMergeAccountRows(rows *sql.Rows, grouped map[accountKey]*AccountRow)
 	for rows.Next() {
 		var row AccountRow
 		if err := rows.Scan(
-			&row.AccountKey,
+			&row.BucketMS, &row.AccountKey,
 			&row.AccountSnapshot,
 			&row.AuthLabelSnapshot,
 			&row.AuthProviderSnapshot,
@@ -1244,6 +1251,7 @@ func scanAndMergeAccountRows(rows *sql.Rows, grouped map[accountKey]*AccountRow)
 			&row.Calls,
 			&row.SuccessCalls,
 			&row.FailureCalls,
+			&row.ZeroTokenCalls,
 			&row.InputTokens,
 			&row.OutputTokens,
 			&row.ReasoningTokens,
@@ -1269,6 +1277,7 @@ func scanAndMergeAccountRows(rows *sql.Rows, grouped map[accountKey]*AccountRow)
 
 func mergeAccountRow(grouped map[accountKey]*AccountRow, row AccountRow) {
 	key := accountKey{
+		bucketMS:               row.BucketMS,
 		accountKey:             row.AccountKey,
 		model:                  row.Model,
 		billingModel:           row.BillingModel,
@@ -1286,6 +1295,7 @@ func mergeAccountRow(grouped map[accountKey]*AccountRow, row AccountRow) {
 	entry.Calls += row.Calls
 	entry.SuccessCalls += row.SuccessCalls
 	entry.FailureCalls += row.FailureCalls
+	entry.ZeroTokenCalls += row.ZeroTokenCalls
 	entry.InputTokens += row.InputTokens
 	entry.OutputTokens += row.OutputTokens
 	entry.ReasoningTokens += row.ReasoningTokens
@@ -1358,7 +1368,10 @@ func sortedAccountRows(grouped map[accountKey]*AccountRow) []AccountRow {
 		if left.ServiceTier != right.ServiceTier {
 			return left.ServiceTier < right.ServiceTier
 		}
-		return left.ContextThresholdTokens < right.ContextThresholdTokens
+		if left.ContextThresholdTokens != right.ContextThresholdTokens {
+			return left.ContextThresholdTokens < right.ContextThresholdTokens
+		}
+		return left.BucketMS < right.BucketMS
 	})
 	return result
 }

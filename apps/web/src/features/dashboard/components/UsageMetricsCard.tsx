@@ -1,3 +1,4 @@
+import { formatPricingValue, pricingQualityHint } from '@/utils/pricingQuality';
 import type { CSSProperties, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -122,9 +123,9 @@ export function UsageMetricsCard({
     },
     {
       label: t('dashboard.today_cost'),
-      value: today ? formatUsd(today.total_cost) : loadingText,
+      value: today ? formatPricingValue(formatUsd(today.total_cost), today.pricing_coverage, t) : loadingText,
       subValue: today
-        ? t('dashboard.metric_total_tokens', { value: formatCompactNumber(today.total_tokens) })
+        ? pricingQualityHint(today.pricing_coverage, t) || t('dashboard.metric_total_tokens', { value: formatCompactNumber(today.total_tokens) })
         : undefined,
       icon: <IconDollarSign size={20} />,
       color: dataPalette.amber,

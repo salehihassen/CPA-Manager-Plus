@@ -148,7 +148,12 @@ func TestUsagePricingRollupWorkerContinuesPendingBacklog(t *testing.T) {
 }
 
 func TestUsagePricingRollupWorkerContinuesRevisionClearing(t *testing.T) {
-	db := newUsagePricingRollupWorkerStore(t)
+	sqlDB, err := sqliterepo.Open(filepath.Join(t.TempDir(), "usage.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	db := store.New(sqlDB)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	threshold := func(value int64) store.ModelPrice {
@@ -175,7 +180,7 @@ func TestUsagePricingRollupWorkerContinuesRevisionClearing(t *testing.T) {
 	if _, err := db.CatchUpUsagePricing(ctx, 10, 10_000); err != nil {
 		t.Fatalf("build pricing revision A: %v", err)
 	}
-	revisionA, err := db.UsagePricingState(ctx)
+	_, err = db.UsagePricingState(ctx)
 	if err != nil {
 		t.Fatalf("read pricing revision A: %v", err)
 	}
@@ -189,6 +194,19 @@ func TestUsagePricingRollupWorkerContinuesRevisionClearing(t *testing.T) {
 		t.Fatalf("restore prices A: %v", err)
 	}
 
+	// Returning to A keeps B's historical bands and its structure revision.
+	revisionB, err := db.UsagePricingState(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Start from a persisted, partially cleared target revision to test continuation.
+	if _, err := sqlDB.ExecContext(ctx, `update usage_pricing_rollup_state set status='clearing', coverage_event_id=0, backfill_last_event_id=0, processed_events=0`); err != nil {
+		t.Fatal(err)
+	}
+	first, err := db.CatchUpUsagePricing(ctx, 1, 30_000)
+	if err != nil || !first.Pending || !first.ContinueSoon {
+		t.Fatalf("bounded clearing %#v err=%v", first, err)
+	}
 	worker := NewUsagePricingRollupWorker(db)
 	worker.batchLimit = 1
 	worker.maxBatches = usageDerivedTaskCount
@@ -202,11 +220,11 @@ func TestUsagePricingRollupWorkerContinuesRevisionClearing(t *testing.T) {
 		if err != nil {
 			t.Fatalf("pricing state: %v", err)
 		}
-		if state.Status == "ready" && state.StructureRevision == revisionA.StructureRevision {
+		if state.Status == "ready" && state.StructureRevision == revisionB.StructureRevision {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("revision clearing did not continue: state=%#v want_revision=%q", state, revisionA.StructureRevision)
+			t.Fatalf("revision clearing did not continue: state=%#v want_revision=%q", state, revisionB.StructureRevision)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}

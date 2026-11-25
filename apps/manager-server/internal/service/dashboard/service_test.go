@@ -739,3 +739,32 @@ func dashboardEvent(
 		CreatedAtMS:     timestampMS,
 	}
 }
+
+func TestChannelHealthPreservesHistoricalRates(t *testing.T) {
+	db := newDashboardTestStore(t)
+	ctx := context.Background()
+	if err := db.SaveModelPrices(ctx, map[string]store.ModelPrice{"historical": {Prompt: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveModelPrices(ctx, map[string]store.ModelPrice{"historical": {Prompt: 2, EffectiveFromMS: 7200000}}); err != nil {
+		t.Fatal(err)
+	}
+	for i, timestamp := range []int64{3600001, 7200001} {
+		event := dashboardEvent([]string{"old-rate", "new-rate"}[i], timestamp, "historical", false, 1000000, 0, 0, 0, 0, 1000000, nil)
+		if _, err := db.InsertEvents(ctx, []usage.Event{event}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := db.ChannelModelStatsWithFilter(ctx, store.AnalyticsFilter{FromMS: 3600000, ToMS: 10800000, IncludeFailed: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prices, err := db.LoadModelPrices(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	health := buildChannelHealth(rows, prices, 10)
+	if len(health) != 1 || health[0].Calls != 2 || math.Abs(health[0].Cost-3) > 1e-9 {
+		t.Fatalf("historical channel health = %#v, want 2 calls costing $3", health)
+	}
+}

@@ -47,6 +47,7 @@ type Snapshot struct {
 }
 
 type modelStatKey struct {
+	bucketMS               int64
 	model                  string
 	billingModel           string
 	pricingModel           string
@@ -150,7 +151,7 @@ func (r *Reader) loadRows(ctx context.Context, filter store.AnalyticsFilter, das
 		Models:           filter.Models,
 		IncludeFailed:    filter.IncludeFailed,
 		FailedOnly:       filter.FailedOnly,
-		CollapseBuckets:  !dashboardTimelineReady && !analyticsTimelineReady,
+		CollapseBuckets:  false,
 		LeftEdgeDeleted:  edges.Left,
 		RightEdgeDeleted: edges.Right,
 	}
@@ -160,7 +161,7 @@ func (r *Reader) loadRows(ctx context.Context, filter store.AnalyticsFilter, das
 		Models:           filter.Models,
 		IncludeFailed:    filter.IncludeFailed,
 		FailedOnly:       filter.FailedOnly,
-		CollapseBuckets:  !dashboardTimelineReady && !analyticsTimelineReady,
+		CollapseBuckets:  false,
 		LeftEdgeDeleted:  edges.Left,
 		RightEdgeDeleted: edges.Right,
 	}
@@ -299,10 +300,11 @@ func coreFromRows(rows []store.UsageHourlyAggregateRow) (store.Aggregate, []stor
 			successCalls = row.Calls
 		}
 		addModelStat(modelStats, store.ModelStat{
-			Model:               row.Model,
+			BucketMS: row.BucketMS, Model: row.Model,
 			BillingModel:        row.BillingModel,
 			ServiceTier:         row.ServiceTier,
 			Calls:               row.Calls,
+			ZeroTokenCalls:      row.ZeroTokenCalls,
 			SuccessCalls:        successCalls,
 			InputTokens:         row.InputTokens,
 			OutputTokens:        row.OutputTokens,
@@ -323,6 +325,7 @@ func coreFromRows(rows []store.UsageHourlyAggregateRow) (store.Aggregate, []stor
 
 func addModelStat(grouped map[modelStatKey]*store.ModelStat, stat store.ModelStat) {
 	mapKey := modelStatKey{
+		bucketMS:               stat.BucketMS,
 		model:                  stat.Model,
 		billingModel:           stat.BillingModel,
 		pricingModel:           stat.PricingModel,
@@ -349,6 +352,7 @@ func addModelStat(grouped map[modelStatKey]*store.ModelStat, stat store.ModelSta
 	entry.LongCacheReadTokens += stat.LongCacheReadTokens
 	entry.LongCacheCreationTokens += stat.LongCacheCreationTokens
 	entry.TotalTokens += stat.TotalTokens
+	entry.ZeroTokenCalls += stat.ZeroTokenCalls
 }
 
 func sortedModelStats(grouped map[modelStatKey]*store.ModelStat) []store.ModelStat {
@@ -372,7 +376,10 @@ func sortedModelStats(grouped map[modelStatKey]*store.ModelStat) []store.ModelSt
 		if result[i].ServiceTier != result[j].ServiceTier {
 			return result[i].ServiceTier < result[j].ServiceTier
 		}
-		return result[i].ContextThresholdTokens < result[j].ContextThresholdTokens
+		if result[i].ContextThresholdTokens != result[j].ContextThresholdTokens {
+			return result[i].ContextThresholdTokens < result[j].ContextThresholdTokens
+		}
+		return result[i].BucketMS < result[j].BucketMS
 	})
 	return result
 }
@@ -385,12 +392,14 @@ func modelStatsFromPricingRows(rows []store.UsagePricingHourlyRow) []store.Model
 			successCalls = row.Calls
 		}
 		addModelStat(grouped, store.ModelStat{
+			BucketMS:            row.BucketMS,
 			LongContextTokens:   row.LongContextTokens,
 			PricingBand:         row.PricingBand,
 			Model:               row.Model,
 			BillingModel:        row.BillingModel,
 			ServiceTier:         row.ServiceTier,
 			Calls:               row.Calls,
+			ZeroTokenCalls:      row.ZeroTokenCalls,
 			SuccessCalls:        successCalls,
 			InputTokens:         row.InputTokens,
 			OutputTokens:        row.OutputTokens,

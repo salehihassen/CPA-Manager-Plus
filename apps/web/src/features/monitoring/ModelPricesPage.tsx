@@ -74,7 +74,7 @@ const resolveErrorMessage = (error: unknown, fallback: string) => {
 };
 
 export function ModelPricesPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { showNotification } = useNotificationStore();
   const managementKey = useAuthStore((state) => state.managementKey);
   const featureAvailability = usePanelFeatureAvailability();
@@ -99,6 +99,9 @@ export function ModelPricesPage() {
   const [selectedCandidates, setSelectedCandidates] = useState<Record<string, string>>({});
   const [draft, setDraft] = useState<PriceDraft>(() => createEmptyPriceDraft());
   const [manualEditorOpen, setManualEditorOpen] = useState(false);
+  const [effectiveFrom, setEffectiveFrom] = useState('');
+  const [historicalCorrection, setHistoricalCorrection] = useState(false);
+  const [estimatedRate, setEstimatedRate] = useState(false);
   const modelPriceServiceBase = featureAvailability.modelPricesAvailable
     ? featureAvailability.managerServiceBase
     : '';
@@ -204,7 +207,13 @@ export function ModelPricesPage() {
 
   const savePrices = async (prices: Parameters<typeof setModelPrices>[0]) => {
     try {
-      await setModelPrices(prices);
+      const payload = Object.fromEntries(
+        Object.entries(prices).map(([name, value]) => {
+          const { history: _history, ...price } = value;
+          return [name, price];
+        })
+      );
+      await setModelPrices(payload);
       return true;
     } catch (error) {
       const key =
@@ -245,10 +254,22 @@ export function ModelPricesPage() {
       showNotification(t('usage_stats.model_price_model_required'), 'warning');
       return;
     }
+    const effectiveFromMs = new Date(effectiveFrom).getTime();
+    if (!Number.isFinite(effectiveFromMs) || effectiveFromMs < 0 || effectiveFromMs % 3_600_000 !== 0) {
+      showNotification(t('model_prices.invalid_effective_date'), 'warning');
+      return;
+    }
+    if (effectiveFromMs < Math.ceil(Date.now() / 3_600_000) * 3_600_000 && !historicalCorrection) {
+      showNotification(t('model_prices.correction_required'), 'warning');
+      return;
+    }
     const saved = await savePrices({
       ...modelPrices,
       [model]: {
         ...price,
+        effectiveFromMs,
+        historicalCorrection,
+        estimated: estimatedRate,
       },
     });
     if (!saved) return;
@@ -319,6 +340,11 @@ export function ModelPricesPage() {
   };
 
   const openManualEditor = (model = '', price = modelPrices[model]) => {
+    const now = new Date();
+    now.setTime(Math.ceil(now.getTime() / 3_600_000) * 3_600_000);
+    setEffectiveFrom(new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16));
+    setHistoricalCorrection(false);
+    setEstimatedRate(price?.estimated ?? false);
     setDraft(createPriceDraft(model, price));
     setManualEditorOpen(true);
   };
@@ -425,6 +451,24 @@ export function ModelPricesPage() {
         {manualEditorOpen ? (
           <div className={styles.compactEditor}>
             <Input
+              label={t('model_prices.effective_from_label')}
+              hint={t('model_prices.effective_from_hint')}
+              type="datetime-local"
+              step="60"
+              value={effectiveFrom}
+              onChange={(event) => setEffectiveFrom(event.target.value)}
+              data-testid="effective-from-input"
+            />
+            <label>
+              <input type="checkbox" checked={historicalCorrection} onChange={(event) => setHistoricalCorrection(event.target.checked)} data-testid="historical-correction-input" />
+              {t('model_prices.historical_correction')}
+            </label>
+            <p>{t('model_prices.historical_correction_hint')}</p>
+            <label>
+              <input type="checkbox" checked={estimatedRate} onChange={(event) => setEstimatedRate(event.target.checked)} />
+              {t('model_prices.estimated_rate')}
+            </label>
+            <Input
               label={t('usage_stats.model_name')}
               className={styles.compactInput}
               value={draft.model}
@@ -481,6 +525,29 @@ export function ModelPricesPage() {
                 step="0.0001"
               />
             </div>
+            {modelPrices[draft.model]?.history?.length ? (
+              <details className={styles.priceHistory}>
+                <summary>{t('model_prices.price_history_title')}</summary>
+                <ul>
+                  {(modelPrices[draft.model]?.history ?? []).map((version) => (
+                    <li key={version.effectiveFromMs}>
+                      {version.effectiveFromMs === 0
+                        ? t('model_prices.price_history_epoch')
+                        : new Intl.DateTimeFormat(i18n?.language || 'en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(version.effectiveFromMs)}
+                      {version.price.estimated ? ` · ${t('pricing_quality.estimated')}` : ''}
+                      {' · ' + (version.price.promptConfigured || version.price.prompt > 0 ? version.price.prompt.toFixed(4) : t('model_prices.price_history_unpriced')) + '/1M'}
+                      {!version.retired ? <Button size="xs" variant="ghost" onClick={() => {
+                        const date = new Date(version.effectiveFromMs);
+                        setEffectiveFrom(new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16));
+                        setDraft(createPriceDraft(draft.model, version.price));
+                        setEstimatedRate(version.price.estimated ?? false);
+                        setHistoricalCorrection(false);
+                      }}>{t('model_prices.edit_version')}</Button> : null}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
             <div className={styles.compactEditorActions}>
               <Button
                 size="xs"

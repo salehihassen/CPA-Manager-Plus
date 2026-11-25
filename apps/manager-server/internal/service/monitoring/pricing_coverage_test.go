@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -422,6 +423,10 @@ func TestAccountHistoryIsolatesUnrecoverablePricingByAccount(t *testing.T) {
 
 	wantA := want.Items[0]
 	wantA.TotalCost = nil
+	wantA.PricingCoverage = got.Items[0].PricingCoverage
+	if got.Items[0].PricingCoverage.UnpricedCalls != wantA.TotalRequests {
+		t.Fatal("missing pricing was not reported as unpriced")
+	}
 	if !reflect.DeepEqual(got.Items[0], wantA) {
 		t.Fatalf("incomplete account was not isolated: got=%#v want=%#v", got.Items[0], wantA)
 	}
@@ -552,4 +557,93 @@ func pricingCoverageCounts(t *testing.T, db *sql.DB) [6]int64 {
 		t.Fatal(err)
 	}
 	return result
+}
+
+// Simulate the actual pre-hourly schema, including databases whose raw events
+// have already been deleted by the supported archive workflow.
+func TestLifetimePricingHourlyUpgradeWithArchivedUsage(t *testing.T) {
+	for _, damaged := range []bool{false, true} {
+		t.Run(map[bool]string{false: "complete", true: "missing_projection"}[damaged], func(t *testing.T) {
+			db, sqlDB, _, _ := pricingCoverageFixture(t)
+			ctx := context.Background()
+			request := pricingCoverageAccountRequest()
+			want, err := New(db).AccountHistory(ctx, request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var path, ddl string
+			if err := sqlDB.QueryRow(`select file from pragma_database_list where name='main'`).Scan(&path); err != nil {
+				t.Fatal(err)
+			}
+			if err := sqlDB.QueryRow(`select sql from sqlite_master where name='usage_pricing_account_rollups_v1'`).Scan(&ddl); err != nil {
+				t.Fatal(err)
+			}
+			ddl = strings.ReplaceAll(ddl, "bucket_ms integer not null default 0,", "")
+			ddl = strings.ReplaceAll(ddl, "structure_revision, bucket_ms, account_key", "structure_revision, account_key")
+			if _, err := sqlDB.Exec(`alter table usage_pricing_account_rollups_v1 rename to upgrade_fixture_saved`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := sqlDB.Exec(ddl); err != nil {
+				t.Fatal(err)
+			}
+			if damaged {
+				if _, err := sqlDB.Exec(`delete from usage_monitoring_event_projection_v1 where event_id not in (select id from usage_events)`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			upgraded, err := sqliterepo.Open(path)
+			if damaged {
+				if err == nil {
+					_ = upgraded.Close()
+					t.Fatal("accepted upgrade without rebuild source")
+				}
+				if !strings.Contains(err.Error(), "retained pricing history is incomplete") {
+					t.Fatalf("unexpected upgrade error: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			next := store.New(upgraded)
+			defer next.Close()
+			check := func() {
+				t.Helper()
+				got, err := New(next).AccountHistory(ctx, request)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(got.Items, want.Items) {
+					t.Fatalf("upgrade changed historical totals: got=%#v want=%#v", got.Items, want.Items)
+				}
+			}
+			check()
+			for i := 0; i < 50; i++ {
+				result, err := next.CatchUpUsagePricing(ctx, 2, time.Now().UnixMilli())
+				if err != nil {
+					t.Fatal(err)
+				}
+				check()
+				if !result.Pending {
+					break
+				}
+				if i == 49 {
+					t.Fatal("rebuild did not finish")
+				}
+			}
+			if err := next.Close(); err != nil {
+				t.Fatal(err)
+			}
+			upgraded, err = sqliterepo.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			next = store.New(upgraded)
+			defer next.Close()
+			check()
+		})
+	}
 }

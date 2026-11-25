@@ -4693,3 +4693,142 @@ func testCanonicalHash(hash string) string {
 	sum := sha256.Sum256([]byte(hash))
 	return hex.EncodeToString(sum[:])
 }
+
+func TestMonitoringStatsPreserveHistoricalRates(t *testing.T) {
+	for _, newMS := range []int64{7200000, 3600000 + 7*24*3600000} {
+		t.Run(fmt.Sprint(newMS), func(t *testing.T) {
+			db := newMonitoringTestStore(t)
+			ctx := context.Background()
+			const oldMS int64 = 3600000
+			if err := db.SaveModelPrices(ctx, map[string]store.ModelPrice{"historical": {Prompt: 1}}); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.SaveModelPrices(ctx, map[string]store.ModelPrice{"historical": {Prompt: 2, EffectiveFromMS: newMS}}); err != nil {
+				t.Fatal(err)
+			}
+			for i, timestamp := range []int64{oldMS, newMS} {
+				event := monitoringEvent(fmt.Sprintf("historical-%d", i), timestamp+1, "historical", "auth-a", "source-a", false, 1000000, 0, 0, 0, 1000000, nil)
+				if _, err := db.InsertEvents(ctx, []usage.Event{event}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			prices, err := db.LoadModelPrices(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			filter := store.AnalyticsFilter{FromMS: 0, ToMS: (newMS/(24*3600000) + 1) * 24 * 3600000, IncludeFailed: true}
+			points, err := db.HeatmapWithFilter(ctx, filter, time.UTC)
+			if err != nil {
+				t.Fatal(err)
+			}
+			heatmap := buildHeatmap(points, prices)
+			var cost float64
+			var calls int64
+			for _, point := range heatmap {
+				cost += point.Cost
+				calls += point.Calls
+			}
+			expectedCells := 1
+			if newMS == 7200000 {
+				expectedCells = 2
+			}
+			if len(heatmap) != expectedCells || calls != 2 || math.Abs(cost-3) > 1e-9 {
+				t.Fatalf("historical heatmap = %#v, want 2 calls costing $3", heatmap)
+			}
+			channels, err := db.ChannelModelStatsWithFilter(ctx, filter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertChannels := func(rows []store.ChannelModelStat) {
+				t.Helper()
+				share := buildChannelShare(rows, prices)
+				if len(share) != 1 || share[0].Calls != 2 || math.Abs(share[0].Cost-3) > 1e-9 {
+					t.Fatalf("historical channel share = %#v, want 2 calls costing $3", share)
+				}
+			}
+			assertChannels(channels)
+			assertCredentials := func() {
+				t.Helper()
+				rows, err := db.CredentialModelStatsWithFilter(ctx, filter)
+				if err != nil {
+					t.Fatal(err)
+				}
+				stats := buildCredentialStats(rows, prices)
+				if len(stats) != 1 || stats[0].Calls != 2 || math.Abs(stats[0].Cost-3) > 1e-9 {
+					t.Fatalf("historical credentials = %#v, want 2 calls costing $3", stats)
+				}
+			}
+			assertAPIKeys := func(rows []store.APIKeyModelStat) {
+				t.Helper()
+				stats := buildAPIKeyStats(rows, prices)
+				if len(stats) != 1 || stats[0].Calls != 2 || math.Abs(stats[0].Cost-3) > 1e-9 {
+					t.Fatalf("historical API keys = %#v, want 2 calls costing $3", stats)
+				}
+			}
+			assertCredentials()
+			keys, err := db.APIKeyModelStatsWithFilter(ctx, filter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertAPIKeys(keys)
+			// Check both the projection fallback and the stored monitoring rollups.
+			for _, stored := range []bool{false, true} {
+				if stored {
+					if _, err := db.CatchUpUsageMonitoringStats(ctx, 100, newMS+3600000); err != nil {
+						t.Fatal(err)
+					}
+				}
+				accounts, _, available, err := db.UsageMonitoringAccountStats(ctx, filter)
+				if err != nil || !available {
+					t.Fatalf("account stats available=%v err=%v", available, err)
+				}
+				assertChannels(channelModelStatsFromAccountStats(accounts))
+				keys, _, available, err := db.UsageMonitoringAPIKeyStats(ctx, filter)
+				if err != nil || !available {
+					t.Fatalf("API key stats available=%v err=%v", available, err)
+				}
+				assertAPIKeys(keys)
+			}
+
+		})
+	}
+}
+
+func TestLifetimeHistoryUsesEventRatesAcrossRollups(t *testing.T) {
+	ctx := context.Background()
+	db := newMonitoringTestStore(t)
+	for _, p := range []store.ModelPrice{{Prompt: 1, EffectiveFromMS: 3600000}, {Prompt: 2, EffectiveFromMS: 7200000}} {
+		if err := db.SaveModelPrices(ctx, map[string]store.ModelPrice{"history": p}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert := func(hash string, timestamp int64) {
+		e := monitoringEvent(hash, timestamp, "history", "auth-1", "source-a", false, 1000000, 0, 0, 0, 1000000, nil)
+		e.AuthFileSnapshot = "history.json"
+		e.AccountSnapshot = "history@example.com"
+		if _, err := db.InsertEvents(ctx, []usage.Event{e}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert("new", 7200001)
+	insert("delayed-old", 3600001)
+	req := AccountHistoryRequest{Accounts: []AccountHistoryTarget{{RowKey: "history", AuthFileSnapshot: "history.json", AuthIndex: "auth-1", AuthProviderSnapshot: "openai", AccountSnapshot: "history@example.com"}}}
+	check := func(want float64, calls int64) {
+		t.Helper()
+		got, err := New(db).AccountHistory(ctx, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Items) != 1 || got.Items[0].TotalCost == nil || math.Abs(*got.Items[0].TotalCost-want) > 1e-9 || got.Items[0].TotalRequests != calls {
+			t.Fatalf("history = %#v, want %d calls costing %v", got.Items, calls, want)
+		}
+	}
+	check(3, 2)
+	req.CatchUp = true
+	check(3, 2)
+	insert("late-tail", 3600002)
+	req.CatchUp = false
+	check(4, 3)
+	req.CatchUp = true
+	check(4, 3)
+}

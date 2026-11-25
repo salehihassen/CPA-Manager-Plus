@@ -3,6 +3,7 @@ package pricing
 
 import (
 	"strings"
+	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 )
@@ -14,6 +15,8 @@ const PerMillion = 1_000_000.0
 // CachedTokens is the remaining legacy/OpenAI-style cached input after any
 // fine-grained cache_read/cache_creation values have already been removed.
 type ModelTokens struct {
+	ZeroTokenCalls          int64
+	TotalTokens             int64
 	PricingModel            string
 	ContextThresholdTokens  int64
 	InputTokens             int64
@@ -175,11 +178,16 @@ func ServiceTierMultiplier(modelName string, serviceTier string) float64 {
 // CostForModelWithServiceTier selects context or explicit service-tier prices
 // before falling back to the compatibility multiplier for older price books.
 func CostForModelWithServiceTier(modelName string, serviceTier string, tokens ModelTokens, prices map[string]model.ModelPrice) float64 {
+	return CostForModelWithServiceTierAtTime(modelName, serviceTier, tokens, prices, time.Now().UnixMilli())
+}
+
+// CostForModelWithServiceTierAtTime selects the rate effective for this usage.
+func CostForModelWithServiceTierAtTime(modelName string, serviceTier string, tokens ModelTokens, prices map[string]model.ModelPrice, timestampMS int64) float64 {
 	price, ok := resolveModelPrice(modelName, prices)
 	if !ok {
 		return 0
 	}
-	return costForPriceWithServiceTier(modelName, serviceTier, tokens, price)
+	return costForHistoricalPrice(modelName, serviceTier, tokens, effectivePriceAtTime(price, timestampMS))
 }
 
 // CostForModelCandidatesWithServiceTier uses the first candidate to determine
@@ -187,6 +195,16 @@ func CostForModelWithServiceTier(modelName string, serviceTier string, tokens Mo
 // Callers should pass resolved/upstream model first, followed by the requested
 // display model or alias as a price fallback.
 func CostForModelCandidatesWithServiceTier(modelNames []string, serviceTier string, tokens ModelTokens, prices map[string]model.ModelPrice) float64 {
+	return CostForModelCandidatesWithServiceTierAtTime(modelNames, serviceTier, tokens, prices, time.Now().UnixMilli())
+}
+
+// CostForModelCandidatesWithServiceTierAtTime prices usage at its bucket timestamp.
+func CostForModelCandidatesWithServiceTierAtTime(modelNames []string, serviceTier string, tokens ModelTokens, prices map[string]model.ModelPrice, timestampMS int64) float64 {
+	return QuoteForModelCandidatesAtTime(modelNames, serviceTier, tokens, prices, timestampMS).Amount
+}
+
+// QuoteForModelCandidatesAtTime reports whether a cost depends on estimated or missing evidence.
+func QuoteForModelCandidatesAtTime(modelNames []string, serviceTier string, tokens ModelTokens, prices map[string]model.ModelPrice, timestampMS int64) Quote {
 	seen := map[string]bool{}
 	candidates := make([]string, 0, len(modelNames))
 	for _, modelName := range modelNames {
@@ -202,25 +220,48 @@ func CostForModelCandidatesWithServiceTier(modelNames []string, serviceTier stri
 		behaviorModel = candidates[0]
 	}
 	if pricingModel := strings.TrimSpace(tokens.PricingModel); pricingModel != "" {
-		if price, ok := prices[pricingModel]; ok {
-			return costForPriceWithServiceTier(behaviorModel, serviceTier, tokens, price)
+		if price, ok := prices[pricingModel]; ok && !effectivePriceAtTime(price, timestampMS).Retired {
+			return quoteForPrice(behaviorModel, serviceTier, tokens, price, timestampMS)
 		}
 	}
 	for _, modelName := range candidates {
 		price, ok := prices[modelName]
-		if !ok {
+		if !ok || effectivePriceAtTime(price, timestampMS).Retired {
 			continue
 		}
-		return costForPriceWithServiceTier(behaviorModel, serviceTier, tokens, price)
+		return quoteForPrice(behaviorModel, serviceTier, tokens, price, timestampMS)
 	}
 	for _, modelName := range candidates {
 		price, ok := officialGPT56Price(modelName)
-		if !ok {
+		price.Estimated = true
+		if !ok || effectivePriceAtTime(price, timestampMS).Retired {
 			continue
 		}
-		return costForPriceWithServiceTier(behaviorModel, serviceTier, tokens, price)
+		return quoteForPrice(behaviorModel, serviceTier, tokens, price, timestampMS)
 	}
-	return 0
+	return Quote{Status: "unpriced", Reasons: []string{"missing_rate"}}
+}
+
+func effectivePriceAtTime(price model.ModelPrice, timestampMS int64) model.ModelPrice {
+	if timestampMS < 0 {
+		return model.ModelPrice{Retired: true}
+	}
+	for i := len(price.History) - 1; i >= 0; i-- {
+		version := price.History[i]
+		if version.EffectiveFromMS <= timestampMS {
+			historical := version.Price
+			historical.Retired = version.Retired
+			if version.EffectiveFromMS == 0 {
+				historical.Estimated = true
+			}
+			historical.History = nil
+			return historical
+		}
+	}
+	if len(price.History) > 0 {
+		return model.ModelPrice{Retired: true}
+	}
+	return price
 }
 
 // SumCost folds CostForModel over a slice of (model, tokens) tuples.
@@ -411,4 +452,20 @@ func clampTokens(value int64, total int64) int64 {
 
 func configuredPriceValue(value float64, configured bool) bool {
 	return configured || value > 0
+}
+
+func costForHistoricalPrice(name, tier string, tokens ModelTokens, price model.ModelPrice) float64 {
+	if price.Retired {
+		return 0
+	}
+	if tokens.ContextThresholdTokens > 0 {
+		threshold := int64(-1)
+		for _, band := range price.ContextTiers {
+			if band.ThresholdTokens <= tokens.ContextThresholdTokens && band.ThresholdTokens > threshold {
+				threshold = band.ThresholdTokens
+			}
+		}
+		tokens.ContextThresholdTokens = threshold
+	}
+	return costForPriceWithServiceTier(name, tier, tokens, price)
 }
