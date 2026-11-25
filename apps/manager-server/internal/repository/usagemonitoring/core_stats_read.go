@@ -328,7 +328,7 @@ func mergeStoredModelStats(
 		sum(cached_tokens), sum(cache_read_tokens), sum(cache_creation_tokens),
 		sum(long_input_tokens), sum(long_output_tokens), sum(long_cached_tokens),
 		sum(long_cache_read_tokens), sum(long_cache_creation_tokens),
-		sum(total_tokens)
+		sum(total_tokens), sum(zero_token_calls)
 	from usage_monitoring_account_daily_rollups_v1
 	where `+strings.Join(conditions, " and ")+`
 	group by model, billing_model, pricing_model, context_threshold_tokens,
@@ -389,7 +389,7 @@ func mergeProjectedModelStats(
 		coalesce(sum(case when normalized_total_input_tokens > ? then compatible_cached_tokens_value else 0 end), 0),
 		coalesce(sum(case when normalized_total_input_tokens > ? then cache_read_tokens else 0 end), 0),
 		coalesce(sum(case when normalized_total_input_tokens > ? then cache_creation_tokens else 0 end), 0),
-		coalesce(sum(total_tokens), 0)
+		coalesce(sum(total_tokens), 0), coalesce(sum(case when total_tokens=0 and failed=0 then 1 else 0 end),0)
 	from banded_events
 	group by analytics_model, billing_model_value, pricing_model_value,
 		context_threshold_tokens_value, service_tier`, monitoringBandedProjectedEventsCTE(source))
@@ -424,7 +424,7 @@ func scanDailyModelStats(rows *sql.Rows, grouped map[dailyModelStatKey]*ModelSta
 			&row.LongCachedTokens,
 			&row.LongCacheReadTokens,
 			&row.LongCacheCreationTokens,
-			&row.TotalTokens,
+			&row.TotalTokens, &row.ZeroTokenCalls,
 		); err != nil {
 			return err
 		}
@@ -455,6 +455,7 @@ func scanDailyModelStats(rows *sql.Rows, grouped map[dailyModelStatKey]*ModelSta
 		entry.LongCacheReadTokens += row.LongCacheReadTokens
 		entry.LongCacheCreationTokens += row.LongCacheCreationTokens
 		entry.TotalTokens += row.TotalTokens
+		entry.ZeroTokenCalls += row.ZeroTokenCalls
 	}
 	return rows.Err()
 }

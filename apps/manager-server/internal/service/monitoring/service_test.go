@@ -4793,3 +4793,42 @@ func TestMonitoringStatsPreserveHistoricalRates(t *testing.T) {
 		})
 	}
 }
+
+func TestLifetimeHistoryUsesEventRatesAcrossRollups(t *testing.T) {
+	ctx := context.Background()
+	db := newMonitoringTestStore(t)
+	for _, p := range []store.ModelPrice{{Prompt: 1, EffectiveFromMS: 3600000}, {Prompt: 2, EffectiveFromMS: 7200000}} {
+		if err := db.SaveModelPrices(ctx, map[string]store.ModelPrice{"history": p}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert := func(hash string, timestamp int64) {
+		e := monitoringEvent(hash, timestamp, "history", "auth-1", "source-a", false, 1000000, 0, 0, 0, 1000000, nil)
+		e.AuthFileSnapshot = "history.json"
+		e.AccountSnapshot = "history@example.com"
+		if _, err := db.InsertEvents(ctx, []usage.Event{e}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert("new", 7200001)
+	insert("delayed-old", 3600001)
+	req := AccountHistoryRequest{Accounts: []AccountHistoryTarget{{RowKey: "history", AuthFileSnapshot: "history.json", AuthIndex: "auth-1", AuthProviderSnapshot: "openai", AccountSnapshot: "history@example.com"}}}
+	check := func(want float64, calls int64) {
+		t.Helper()
+		got, err := New(db).AccountHistory(ctx, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Items) != 1 || got.Items[0].TotalCost == nil || math.Abs(*got.Items[0].TotalCost-want) > 1e-9 || got.Items[0].TotalRequests != calls {
+			t.Fatalf("history = %#v, want %d calls costing %v", got.Items, calls, want)
+		}
+	}
+	check(3, 2)
+	req.CatchUp = true
+	check(3, 2)
+	insert("late-tail", 3600002)
+	req.CatchUp = false
+	check(4, 3)
+	req.CatchUp = true
+	check(4, 3)
+}

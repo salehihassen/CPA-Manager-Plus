@@ -172,7 +172,7 @@ func (r *repository) LoadModelStats(ctx context.Context, filter AnalyticsFilter)
 		coalesce(sum(case when normalized_total_input_tokens > %[3]d then max(max(cached_tokens, cache_tokens) - max(cache_read_tokens, 0) - max(cache_creation_tokens, 0), 0) else 0 end), 0),
 		coalesce(sum(case when normalized_total_input_tokens > %[3]d then cache_read_tokens else 0 end), 0),
 		coalesce(sum(case when normalized_total_input_tokens > %[3]d then cache_creation_tokens else 0 end), 0),
-		coalesce(sum(total_tokens), 0)
+		coalesce(sum(total_tokens), 0), coalesce(sum(case when total_tokens=0 and failed=0 then 1 else 0 end),0)
 	from banded_events
 		group by bucket_ms, analytics_model, billing_model_value, pricing_model_value,
 		context_threshold_tokens_value, service_tier
@@ -205,7 +205,7 @@ func (r *repository) LoadModelStats(ctx context.Context, filter AnalyticsFilter)
 			&stat.LongCachedTokens,
 			&stat.LongCacheReadTokens,
 			&stat.LongCacheCreationTokens,
-			&stat.TotalTokens,
+			&stat.TotalTokens, &stat.ZeroTokenCalls,
 		); err != nil {
 			return nil, state, false, err
 		}

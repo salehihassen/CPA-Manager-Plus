@@ -581,11 +581,17 @@ describe('ModelPricesPage Attention UI', () => {
       saveButton.props.onClick();
     });
 
+    expect(setModelPrices).not.toHaveBeenCalled();
+    await act(async () => {
+      root.findByProps({ 'data-testid': 'historical-correction-input' }).props.onChange({target:{checked:true}});
+    });
+    await act(async () => { saveButton.props.onClick(); });
     expect(setModelPrices).toHaveBeenCalledWith({
       'tiered-model': expect.objectContaining({
         prompt: 6,
         source: 'manual',
         effectiveFromMs: new Date('2026-01-02T03:00').getTime(),
+        historicalCorrection: true,
         contextTiers: [
           expect.objectContaining({
             thresholdTokens: 128_000,

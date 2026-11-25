@@ -480,6 +480,7 @@ func (r *repository) UpsertSynced(ctx context.Context, prices map[string]model.M
 	}
 	for id, price := range afterPrices {
 		price.EffectiveFromMS = 0
+		price.Estimated = false
 		price.Retired = false
 		afterPrices[id] = price
 	}

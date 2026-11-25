@@ -54,20 +54,21 @@ type Window struct {
 }
 
 type TodaySummary struct {
-	TotalCalls          int64    `json:"total_calls"`
-	SuccessCalls        int64    `json:"success_calls"`
-	FailureCalls        int64    `json:"failure_calls"`
-	SuccessRate         float64  `json:"success_rate"`
-	InputTokens         int64    `json:"input_tokens"`
-	OutputTokens        int64    `json:"output_tokens"`
-	CachedTokens        int64    `json:"cached_tokens"`
-	CacheReadTokens     int64    `json:"cache_read_tokens"`
-	CacheCreationTokens int64    `json:"cache_creation_tokens"`
-	ReasoningTokens     int64    `json:"reasoning_tokens"`
-	TotalTokens         int64    `json:"total_tokens"`
-	TotalCost           float64  `json:"total_cost"`
-	AverageLatencyMS    *float64 `json:"average_latency_ms"`
-	ZeroTokenCalls      int64    `json:"zero_token_calls"`
+	PricingCoverage     pricing.Coverage `json:"pricing_coverage"`
+	TotalCalls          int64            `json:"total_calls"`
+	SuccessCalls        int64            `json:"success_calls"`
+	FailureCalls        int64            `json:"failure_calls"`
+	SuccessRate         float64          `json:"success_rate"`
+	InputTokens         int64            `json:"input_tokens"`
+	OutputTokens        int64            `json:"output_tokens"`
+	CachedTokens        int64            `json:"cached_tokens"`
+	CacheReadTokens     int64            `json:"cache_read_tokens"`
+	CacheCreationTokens int64            `json:"cache_creation_tokens"`
+	ReasoningTokens     int64            `json:"reasoning_tokens"`
+	TotalTokens         int64            `json:"total_tokens"`
+	TotalCost           float64          `json:"total_cost"`
+	AverageLatencyMS    *float64         `json:"average_latency_ms"`
+	ZeroTokenCalls      int64            `json:"zero_token_calls"`
 }
 
 type RollingSummary struct {
@@ -438,6 +439,7 @@ func buildTodaySummary(agg store.Aggregate, modelStats []store.ModelStat, prices
 		ReasoningTokens:     agg.ReasoningTokens,
 		TotalTokens:         agg.TotalTokens,
 		TotalCost:           totalCost(modelStats, prices),
+		PricingCoverage:     pricingCoverage(modelStats, prices),
 		AverageLatencyMS:    nullableFloat(agg.AvgLatencyMS.Valid, agg.AvgLatencyMS.Float64),
 		ZeroTokenCalls:      agg.ZeroTokenCalls,
 	}
@@ -827,7 +829,12 @@ func aggregateModelStats(stats []store.ModelStat, prices map[string]store.ModelP
 }
 
 func costForStat(stat store.ModelStat, prices map[string]store.ModelPrice) float64 {
-	return pricing.CostForModelCandidatesWithServiceTierAtTime([]string{stat.BillingModel, stat.Model}, stat.ServiceTier, pricing.ModelTokens{
+	return quoteForStat(stat, prices).Amount
+}
+func quoteForStat(stat store.ModelStat, prices map[string]store.ModelPrice) pricing.Quote {
+	return pricing.QuoteForModelCandidatesAtTime([]string{stat.BillingModel, stat.Model}, stat.ServiceTier, pricing.ModelTokens{
+		ZeroTokenCalls:          stat.ZeroTokenCalls,
+		TotalTokens:             stat.TotalTokens,
 		PricingModel:            stat.PricingModel,
 		ContextThresholdTokens:  stat.ContextThresholdTokens,
 		InputTokens:             stat.InputTokens,
@@ -911,4 +918,12 @@ func nullableInt(valid bool, value int64) *int64 {
 		return nil
 	}
 	return &value
+}
+
+func pricingCoverage(stats []store.ModelStat, prices map[string]store.ModelPrice) pricing.Coverage {
+	var c pricing.Coverage
+	for _, stat := range stats {
+		c.Add(quoteForStat(stat, prices), stat.Calls)
+	}
+	return c
 }

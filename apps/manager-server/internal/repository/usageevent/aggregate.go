@@ -76,6 +76,7 @@ type Aggregate struct {
 
 // ModelStat aggregates per-model totals.
 type ModelStat struct {
+	ZeroTokenCalls int64
 	usage.LongContextTokens
 	BucketMS int64
 	usage.PricingBand
@@ -202,7 +203,7 @@ select
 	coalesce(sum(case when coalesce(e.normalized_total_input_tokens, e.input_tokens) > %[1]d then max(max(e.cached_tokens, e.cache_tokens) - max(e.cache_read_tokens, 0) - max(e.cache_creation_tokens, 0), 0) else 0 end), 0),
 	coalesce(sum(case when coalesce(e.normalized_total_input_tokens, e.input_tokens) > %[1]d then e.cache_read_tokens else 0 end), 0),
 	coalesce(sum(case when coalesce(e.normalized_total_input_tokens, e.input_tokens) > %[1]d then e.cache_creation_tokens else 0 end), 0),
-	coalesce(sum(e.total_tokens), 0)
+	coalesce(sum(e.total_tokens), 0), coalesce(sum(case when e.total_tokens=0 and e.failed=0 then 1 else 0 end),0)
 from banded_usage_events e
 join top_models t on t.model = e.analytics_model_value
 group by e.analytics_model_value, billing_model, e.pricing_model_value, e.context_threshold_tokens_value, coalesce(e.service_tier, ''), bucket_ms
@@ -242,7 +243,7 @@ func (r *repository) TopModelsBetween(ctx context.Context, fromMs, toMs int64, l
 			&stat.LongCachedTokens,
 			&stat.LongCacheReadTokens,
 			&stat.LongCacheCreationTokens,
-			&stat.TotalTokens,
+			&stat.TotalTokens, &stat.ZeroTokenCalls,
 		); err != nil {
 			return nil, err
 		}
@@ -272,7 +273,7 @@ select
 	coalesce(sum(case when coalesce(normalized_total_input_tokens, input_tokens) > %[1]d then max(max(cached_tokens, cache_tokens) - max(cache_read_tokens, 0) - max(cache_creation_tokens, 0), 0) else 0 end), 0),
 	coalesce(sum(case when coalesce(normalized_total_input_tokens, input_tokens) > %[1]d then cache_read_tokens else 0 end), 0),
 	coalesce(sum(case when coalesce(normalized_total_input_tokens, input_tokens) > %[1]d then cache_creation_tokens else 0 end), 0),
-	coalesce(sum(total_tokens), 0)
+	coalesce(sum(total_tokens), 0), coalesce(sum(case when total_tokens=0 and failed=0 then 1 else 0 end),0)
 from banded_usage_events
 where timestamp_ms >= ? and timestamp_ms < ?
 group by analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, ''), bucket_ms
@@ -309,7 +310,7 @@ func (r *repository) ModelStatsBetween(ctx context.Context, fromMs, toMs int64) 
 			&stat.LongCachedTokens,
 			&stat.LongCacheReadTokens,
 			&stat.LongCacheCreationTokens,
-			&stat.TotalTokens,
+			&stat.TotalTokens, &stat.ZeroTokenCalls,
 		); err != nil {
 			return nil, err
 		}

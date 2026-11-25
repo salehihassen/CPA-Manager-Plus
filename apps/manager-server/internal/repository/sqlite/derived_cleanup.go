@@ -26,6 +26,7 @@ var derivedLegacyTables = []string{
 	usageAccountModelIdentityLegacy,
 	usageAccountModelCodexIdentityLegacy,
 	usagePricingAccountLegacy,
+	usagePricingAccountHourlyLegacy,
 	usageDashboardHourlyLegacy,
 	usageHourlyAggregateLegacy,
 	usageMonitoringAccountLegacy,

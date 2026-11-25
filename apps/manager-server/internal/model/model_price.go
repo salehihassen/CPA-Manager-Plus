@@ -18,6 +18,8 @@ type ModelPrice struct {
 	ServiceTiers            []ModelPriceServiceTier `json:"serviceTiers,omitempty"`
 	UpdatedAtMS             int64                   `json:"updatedAtMs,omitempty"`
 	SyncedAtMS              *int64                  `json:"syncedAtMs,omitempty"`
+	HistoricalCorrection    bool                    `json:"historicalCorrection,omitempty"`
+	Estimated               bool                    `json:"estimated,omitempty"`
 	EffectiveFromMS         int64                   `json:"effectiveFromMs,omitempty"`
 	History                 []ModelPriceVersion     `json:"history,omitempty"`
 }
@@ -42,7 +44,7 @@ type ModelUsageSummary struct {
 	Models        []ModelUsageStat `json:"models"`
 }
 
-// ModelPriceVersion is an immutable price rule effective from a UTC timestamp.
+// ModelPriceVersion is a retained rate rule. Explicit historical corrections may replace it.
 type ModelPriceVersion struct {
 	Retired         bool       `json:"retired,omitempty"`
 	EffectiveFromMS int64      `json:"effectiveFromMs"`

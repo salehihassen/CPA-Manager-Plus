@@ -251,6 +251,8 @@ type AccountWindowUsageQuery struct {
 }
 
 type AccountWindowModelStat struct {
+	ZeroTokenCalls int64
+	BucketMS       int64
 	usage.LongContextTokens
 	usage.PricingBand
 	RequestIndex        int
@@ -556,7 +558,7 @@ select
 	coalesce(sum(` + longCachedExpr + `), 0),
 	coalesce(sum(` + longCacheReadExpr + `), 0),
 	coalesce(sum(` + longCacheCreationExpr + `), 0),
-	coalesce(sum(total_tokens), 0)
+	coalesce(sum(total_tokens), 0), coalesce(sum(case when total_tokens=0 and failed=0 then 1 else 0 end),0)
 from banded_usage_events ` + where + `
 group by analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, ''), bucket_ms
 order by calls desc, analytics_model_value, pricing_model_value, context_threshold_tokens_value, bucket_ms`
@@ -627,7 +629,7 @@ order by max(t.model_calls) desc, f.analytics_model_value, calls desc`
 			&stat.LongCachedTokens,
 			&stat.LongCacheReadTokens,
 			&stat.LongCacheCreationTokens,
-			&stat.TotalTokens,
+			&stat.TotalTokens, &stat.ZeroTokenCalls,
 		); err != nil {
 			return nil, err
 		}
@@ -1654,7 +1656,7 @@ func (r *repository) AccountWindowModelStats(ctx context.Context, windows []Acco
 	values `+strings.Join(values, ",")+`
 )
 select
-	w.request_index,
+	e.timestamp_ms - (e.timestamp_ms % 3600000), w.request_index,
 		e.analytics_model_value as model,
 	e.billing_model_value as billing_model,
 	e.pricing_model_value,
@@ -1674,13 +1676,13 @@ select
 	coalesce(sum(`+longCacheReadExpr+`), 0),
 	coalesce(sum(`+longCacheCreationExpr+`), 0),
 	coalesce(sum(e.total_tokens), 0),
-	max(e.timestamp_ms)
+	max(e.timestamp_ms), coalesce(sum(case when e.total_tokens=0 and e.failed=0 then 1 else 0 end),0)
 from window_targets w
 	join banded_usage_events e
 		on e.timestamp_ms >= w.from_ms
 		and e.timestamp_ms < w.to_ms
 		and `+usageidentity.SQLAccountKeyExpression("e")+` in (w.account_key, w.legacy_account_key)
-	group by w.request_index, e.analytics_model_value, billing_model, e.pricing_model_value, e.context_threshold_tokens_value, coalesce(e.service_tier, '')
+	group by e.timestamp_ms - (e.timestamp_ms % 3600000), w.request_index, e.analytics_model_value, billing_model, e.pricing_model_value, e.context_threshold_tokens_value, coalesce(e.service_tier, '')
 order by w.request_index, max(e.timestamp_ms) desc`, args...)
 	if err != nil {
 		return nil, err
@@ -1689,7 +1691,7 @@ order by w.request_index, max(e.timestamp_ms) desc`, args...)
 	for rows.Next() {
 		var stat AccountWindowModelStat
 		if err := rows.Scan(
-			&stat.RequestIndex,
+			&stat.BucketMS, &stat.RequestIndex,
 			&stat.Model,
 			&stat.BillingModel,
 			&stat.PricingModel,
@@ -1709,7 +1711,7 @@ order by w.request_index, max(e.timestamp_ms) desc`, args...)
 			&stat.LongCacheReadTokens,
 			&stat.LongCacheCreationTokens,
 			&stat.TotalTokens,
-			&stat.LastSeenMS,
+			&stat.LastSeenMS, &stat.ZeroTokenCalls,
 		); err != nil {
 			return nil, err
 		}

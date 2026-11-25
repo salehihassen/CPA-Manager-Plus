@@ -54,11 +54,14 @@ export interface ModelPrice {
   serviceTiers?: ModelPriceServiceTier[];
   updatedAtMs?: number;
   syncedAtMs?: number;
+  historicalCorrection?: boolean;
+  estimated?: boolean;
   effectiveFromMs?: number;
   history?: ModelPriceHistory[];
 }
 
 export interface ModelPriceHistory {
+  retired?: boolean;
   effectiveFromMs: number;
   price: ModelPrice;
 }

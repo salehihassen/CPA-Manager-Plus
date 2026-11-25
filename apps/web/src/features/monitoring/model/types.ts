@@ -1,3 +1,4 @@
+import type { PricingCoverage } from '@/utils/pricingQuality';
 import type {
   ApiKeyAlias,
   MonitoringAnalyticsCoverage,
@@ -228,6 +229,7 @@ export type MonitoringEventRow = {
 };
 
 export type MonitoringSummary = {
+  pricingCoverage?: PricingCoverage;
   totalCalls: number;
   successCalls: number;
   failureCalls: number;

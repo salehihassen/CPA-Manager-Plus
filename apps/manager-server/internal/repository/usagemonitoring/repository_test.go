@@ -921,7 +921,14 @@ func TestAccountWindowProjectionUsesDailyStatsWithEdgesAndRawTail(t *testing.T) 
 	if !reflect.DeepEqual(projected, raw) {
 		t.Fatalf("daily account window mismatch\nprojection=%#v\nraw=%#v", projected, raw)
 	}
-	if len(projected) != 1 || projected[0].Calls != 5 || projected[0].SuccessCalls != 4 || projected[0].FailureCalls != 1 || projected[0].InputTokens != 150 {
+	var calls, successes, failures, input int64
+	for _, row := range projected {
+		calls += row.Calls
+		successes += row.SuccessCalls
+		failures += row.FailureCalls
+		input += row.InputTokens
+	}
+	if len(projected) != 5 || calls != 5 || successes != 4 || failures != 1 || input != 150 {
 		t.Fatalf("daily account window stats = %#v", projected)
 	}
 }

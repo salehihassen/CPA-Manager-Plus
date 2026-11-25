@@ -96,7 +96,7 @@ func TestSameEffectiveDateCorrectionReplacesRate(t *testing.T) {
 	ctx := context.Background()
 	_, repo := openTestDB(t)
 	for _, rate := range []float64{100, 2} {
-		if err := repo.ReplaceAll(ctx, map[string]model.ModelPrice{"m": {Prompt: rate, EffectiveFromMS: 7200000}}); err != nil {
+		if err := repo.ReplaceAll(ctx, map[string]model.ModelPrice{"m": {Prompt: rate, EffectiveFromMS: 7200000, HistoricalCorrection: rate == 2}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -232,5 +232,53 @@ func TestClientCannotRetireActivePrice(t *testing.T) {
 	}
 	if got := pricing.CostForModelCandidatesWithServiceTierAtTime([]string{"m"}, "", pricing.ModelTokens{InputTokens: 1000000}, book, 1); got != 1 {
 		t.Fatalf("client retired active price: %v", got)
+	}
+}
+
+func TestBackdatedRateRequiresExplicitCorrectionAndPreservesLaterRates(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openTestDB(t)
+	if err := repo.ReplaceAll(ctx, map[string]model.ModelPrice{"m": {Prompt: 4, EffectiveFromMS: 10800000}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.ReplaceAll(ctx, map[string]model.ModelPrice{"m": {Prompt: 2, EffectiveFromMS: 3600000, HistoricalCorrection: true}}); err != nil {
+		t.Fatal(err)
+	}
+	book, err := repo.LoadAll(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if book["m"].Prompt != 4 || len(book["m"].History) != 2 {
+		t.Fatalf("current price/history changed: %#v", book["m"])
+	}
+	tokens := pricing.ModelTokens{InputTokens: 1000000}
+	for timestamp, want := range map[int64]float64{3600001: 2, 7200001: 2, 10800001: 4} {
+		if got := pricing.CostForModelCandidatesWithServiceTierAtTime([]string{"m"}, "", tokens, book, timestamp); got != want {
+			t.Fatalf("%d: got %v want %v", timestamp, got, want)
+		}
+	}
+}
+
+func TestCorrectingRetiredModelDoesNotReactivateIt(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openTestDB(t)
+	for _, book := range []map[string]model.ModelPrice{{"m": {Prompt: 1, EffectiveFromMS: 3600000}}, {}, {"m": {Prompt: .5, EffectiveFromMS: 3600000, HistoricalCorrection: true}}} {
+		if err := repo.ReplaceAll(ctx, book); err != nil {
+			t.Fatal(err)
+		}
+	}
+	public, err := repo.LoadAll(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(public) != 0 {
+		t.Fatalf("historical edit reactivated retired model: %#v", public)
+	}
+	book, err := repo.LoadPricingBook(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pricing.CostForModelCandidatesWithServiceTierAtTime([]string{"m"}, "", pricing.ModelTokens{InputTokens: 1000000}, book, 3600001); got != .5 {
+		t.Fatalf("corrected retired history %v", got)
 	}
 }

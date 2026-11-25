@@ -2561,7 +2561,7 @@ func TestUsageAccountModelRollupPrimaryKeyUpgradeRebuildsDerivedData(t *testing.
 	if got := migrationTablePrimaryKey(t, db, usageAccountModelRollupsTable); got["model"] != 2 {
 		t.Fatalf("account model rollup primary key = %#v", got)
 	}
-	if got := migrationTablePrimaryKey(t, db, usagePricingAccountRollupsTable); got["model"] != 3 {
+	if got := migrationTablePrimaryKey(t, db, usagePricingAccountRollupsTable); got["model"] != 4 || got["bucket_ms"] != 2 {
 		t.Fatalf("pricing account rollup primary key = %#v", got)
 	}
 	assertTableCount(t, db, "usage_events", 1)
@@ -2645,7 +2645,7 @@ func TestUsageAccountModelRollupPrimaryKeyUpgradeDoesNotDeleteDerivedRows(t *tes
 	if got := migrationTablePrimaryKey(t, db, usageAccountModelRollupsTable); got["model"] != 2 {
 		t.Fatalf("account primary key = %#v", got)
 	}
-	if got := migrationTablePrimaryKey(t, db, usagePricingAccountRollupsTable); got["model"] != 3 {
+	if got := migrationTablePrimaryKey(t, db, usagePricingAccountRollupsTable); got["model"] != 4 || got["bucket_ms"] != 2 {
 		t.Fatalf("pricing primary key = %#v", got)
 	}
 	assertTableCount(t, db, usageAccountModelRollupsTable, 0)
@@ -2664,7 +2664,7 @@ func TestUsageAccountModelRollupPrimaryKeyUpgradeDoesNotDeleteDerivedRows(t *tes
 	if got := migrationTablePrimaryKey(t, db, usageAccountModelRollupsTable); got["model"] != 2 {
 		t.Fatalf("account primary key after retry = %#v", got)
 	}
-	if got := migrationTablePrimaryKey(t, db, usagePricingAccountRollupsTable); got["model"] != 3 {
+	if got := migrationTablePrimaryKey(t, db, usagePricingAccountRollupsTable); got["model"] != 4 || got["bucket_ms"] != 2 {
 		t.Fatalf("pricing primary key after retry = %#v", got)
 	}
 	assertTableCount(t, db, usageAccountModelRollupsTable, 0)

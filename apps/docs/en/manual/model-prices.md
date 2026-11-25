@@ -60,7 +60,7 @@ Models such as GPT-5.6 may vary by context length, service tier, and cache type.
 - A matched context tier or the legacy GPT long-context rule uses its standard context price without stacking Fast/Priority pricing.
 - Non-models.dev entries, older data, and models without an explicit mode price retain the existing multiplier as a compatibility fallback.
 
-Model Prices displays synchronized context tiers and service-tier prices as read-only rules. The current manual editor manages base prices only; saving a manual price explicitly clears existing synchronized advanced rules, with a warning shown before saving.
+The manual editor supports base prices, context tiers, and service-tier prices. Editing a rate preserves its advanced rules unless you explicitly change them. Expand price history to select an earlier version for correction.
 
 ## Matching Model Names
 
@@ -80,4 +80,33 @@ The page uses a compact model-usage summary to show which prices are active. It 
 - Provider billing remains authoritative.
 - Missing token, service tier, long-context, or cache fields reduce estimate accuracy.
 - Subscriptions, grants, non-context tiers, unsupported dynamic-mode prices, and multiple currencies may not fit a single price entry.
-- Historical cost may be displayed using current prices after an update; the price table is not an immutable billing snapshot.
+- Historical amounts are derived from retained usage and effective-dated rates. Deliberate historical corrections can change those amounts; they are not immutable invoice snapshots.
+
+## Historical Accounting Contract
+
+Historical pricing and coverage metadata require Manager Server; browser-only local price storage does not provide this ledger.
+
+CPAMP reports **API-equivalent value**: what the retained usage would cost under the selected API rates. It does not allocate subscriptions, credits, or actual provider invoices.
+
+- Forward price changes start at the next whole UTC hour by default. Usage before that boundary retains its prior rate; delayed imports use the usage timestamp, not import time.
+- Rates take effect at a whole UTC hour, inclusively, and end at the next version, exclusively. A midnight or timezone display change does not change the UTC boundary. Arbitrary minute boundaries and scheduling beyond the next UTC hour are unsupported.
+- Lifetime account history and quota windows retain hourly pricing segments, including context/cache/service-tier dimensions. Segments are priced first, then summed. Restarting, rebuilding, or archiving raw events must preserve those segments and totals.
+- **Correct historical pricing** explicitly acknowledges a change to past costs. An earlier insertion or replacement affects only its interval; later rates remain intact. The API requires `historicalCorrection: true` to insert before the latest rate or overwrite an existing past version. A normal replacement request cannot silently do this.
+- Synchronization uses current catalogs. It does not reconstruct a provider's historical tariffs. Collect the published historical rate and effective date, select the model and UTC boundary, enable historical correction, and save. Repeat for each historical interval. Use **This rate is an estimate** when the evidence is incomplete.
+- An undated legacy baseline is always an estimate, including after an upgrade. It preserves the previous numerical estimate without pretending to know the historical tariff. A model first saved with an explicit date has no rate before that date.
+- **Estimate** means at least some calls use an undated/estimated rate, compatibility multipliers/cache rates, or missing token evidence. **Partial cost** means calls lack a matching rate or necessary token details; the displayed subtotal excludes unpriced portions. Explicitly configured free rates remain valid zero costs.
+- Summary, dashboard, lifetime-account and quota-window API responses expose `pricing_coverage` with `known_calls`, `estimated_calls`, `unpriced_calls`, and reason codes. Counts are conservative per retained pricing segment: if its token totals do not reconcile, all calls in that segment are flagged. "Known" means covered by the saved dated rule and available telemetry, not independently audited provider billing. Monitoring, Dashboard and lifetime account totals display uncertainty labels.
+
+Example: save $1/M input from January 1 and $2/M from February 1. A January request imported in March uses $1/M. Inserting $0.80/M from January 15 with historical correction changes January 15–31 only; February stays $2/M.
+
+### Historical correction API
+
+`PUT /v0/management/model-prices` replaces the active model map, so preserve unrelated entries from `GET` and change only the target. Do not submit response `history` as an import mechanism; the server owns history. For the target rate, send the complete intended rule (including context/service tiers), `effectiveFromMs` (UTC milliseconds), and `historicalCorrection: true`. `estimated: true` marks a supplied rate as uncertain. Unknown historical rates should remain unpriced instead of being filled silently with today's rate. An explicitly corrected rate before a retired model’s final version does not reactivate it; deletion is a forward retirement, not a history purge.
+
+### Upgrade, archive and rollback
+
+The upgrade changes the lifetime pricing aggregate key to include the UTC hour and invalidates the previous pricing revision. Rebuilds run in bounded background batches; reads recover from retained events while the rebuild catches up. Storage grows with active account/model/hour combinations rather than just account/model combinations.
+
+Archived raw events can rebuild from the verified retained monitoring projection. If that projection is incomplete, the migration refuses to replace the old lifetime pricing table. Restore the missing history from a backup before retrying; aggregate totals alone cannot reconstruct lost time/token dimensions. Raw archive deletion is gated on the new pricing revision and completed coverage.
+
+Back up the SQLite database and archive directory before upgrading. A binary downgrade is not a schema rollback; restore the matching database backup as well. Historical corrections also require a backup or an explicit compensating correction to undo.

@@ -304,6 +304,7 @@ func coreFromRows(rows []store.UsageHourlyAggregateRow) (store.Aggregate, []stor
 			BillingModel:        row.BillingModel,
 			ServiceTier:         row.ServiceTier,
 			Calls:               row.Calls,
+			ZeroTokenCalls:      row.ZeroTokenCalls,
 			SuccessCalls:        successCalls,
 			InputTokens:         row.InputTokens,
 			OutputTokens:        row.OutputTokens,
@@ -351,6 +352,7 @@ func addModelStat(grouped map[modelStatKey]*store.ModelStat, stat store.ModelSta
 	entry.LongCacheReadTokens += stat.LongCacheReadTokens
 	entry.LongCacheCreationTokens += stat.LongCacheCreationTokens
 	entry.TotalTokens += stat.TotalTokens
+	entry.ZeroTokenCalls += stat.ZeroTokenCalls
 }
 
 func sortedModelStats(grouped map[modelStatKey]*store.ModelStat) []store.ModelStat {
@@ -397,6 +399,7 @@ func modelStatsFromPricingRows(rows []store.UsagePricingHourlyRow) []store.Model
 			BillingModel:        row.BillingModel,
 			ServiceTier:         row.ServiceTier,
 			Calls:               row.Calls,
+			ZeroTokenCalls:      row.ZeroTokenCalls,
 			SuccessCalls:        successCalls,
 			InputTokens:         row.InputTokens,
 			OutputTokens:        row.OutputTokens,

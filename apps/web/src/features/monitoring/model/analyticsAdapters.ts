@@ -443,6 +443,7 @@ export const buildSummaryFromAnalytics = (
   cacheHitRate: summary.cache_hit_rate,
   totalTokens: summary.total_tokens,
   totalCost: summary.total_cost,
+  pricingCoverage: summary.pricing_coverage,
   averageLatencyMs: summary.average_latency_ms,
   rpm30m: summary.rpm_30m,
   tpm30m: summary.tpm_30m,

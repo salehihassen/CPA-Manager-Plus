@@ -1,4 +1,9 @@
 {
+  "pricing_quality": {
+    "estimated": "估算",
+    "partial": "部分費用",
+    "coverage": "{{estimated}} 次呼叫使用估算；{{unpriced}} 次呼叫缺少價格或權杖明細。部分費用不包含無法計價的部分。"
+  },
   "manager_updates": {
     "server_version": "Manager Server 版本",
     "new_version": "CPAMP {{version}} 已發佈",
@@ -2849,6 +2854,11 @@
     "remote_access_disabled": "遠端存取不支援此登入方式，請從本地（localhost）存取"
   },
   "model_prices": {
+    "edit_version": "編輯此版本",
+    "estimated_rate": "此費率為估算值",
+    "correction_required": "請啟用歷史修正後再修改過去的價格。",
+    "historical_correction_hint": "修改從所選整點到下一筆已儲存費率之間的費用。請使用已公布的歷史價格；後續費率將被保留。",
+    "historical_correction": "修正歷史價格",
     "eyebrow": "模型價格",
     "title": "模型價格管理",
     "subtitle": "集中維護 Manager Server 中的模型單價，自動同步可靠匹配，並手動確認相似價格。",
@@ -2912,9 +2922,9 @@
     "optional_price_placeholder": "留空時自動計算",
     "empty": "沒有符合條件的模型價格",
     "effective_from_label": "Apply new price from",
-    "effective_from_hint": "預設從下一個 UTC 整點生效，保留先前用量的價格。僅可更正最新版本，不支援更晚的排程。",
+    "effective_from_hint": "預設為下一個 UTC 整點。過去的日期需要明確啟用歷史修正，後續費率保持不變。",
     "price_history_title": "價格歷史",
-    "price_history_epoch": "初始價格",
+    "price_history_epoch": "無日期的基準費率（估算）",
     "price_history_unpriced": "此後未定價",
     "invalid_effective_date": "請選擇不晚於下一個整點的 UTC 整點。"
   },

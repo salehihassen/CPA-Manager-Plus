@@ -15,6 +15,8 @@ const PerMillion = 1_000_000.0
 // CachedTokens is the remaining legacy/OpenAI-style cached input after any
 // fine-grained cache_read/cache_creation values have already been removed.
 type ModelTokens struct {
+	ZeroTokenCalls          int64
+	TotalTokens             int64
 	PricingModel            string
 	ContextThresholdTokens  int64
 	InputTokens             int64
@@ -198,6 +200,11 @@ func CostForModelCandidatesWithServiceTier(modelNames []string, serviceTier stri
 
 // CostForModelCandidatesWithServiceTierAtTime prices usage at its bucket timestamp.
 func CostForModelCandidatesWithServiceTierAtTime(modelNames []string, serviceTier string, tokens ModelTokens, prices map[string]model.ModelPrice, timestampMS int64) float64 {
+	return QuoteForModelCandidatesAtTime(modelNames, serviceTier, tokens, prices, timestampMS).Amount
+}
+
+// QuoteForModelCandidatesAtTime reports whether a cost depends on estimated or missing evidence.
+func QuoteForModelCandidatesAtTime(modelNames []string, serviceTier string, tokens ModelTokens, prices map[string]model.ModelPrice, timestampMS int64) Quote {
 	seen := map[string]bool{}
 	candidates := make([]string, 0, len(modelNames))
 	for _, modelName := range modelNames {
@@ -214,7 +221,7 @@ func CostForModelCandidatesWithServiceTierAtTime(modelNames []string, serviceTie
 	}
 	if pricingModel := strings.TrimSpace(tokens.PricingModel); pricingModel != "" {
 		if price, ok := prices[pricingModel]; ok && !effectivePriceAtTime(price, timestampMS).Retired {
-			return costForHistoricalPrice(behaviorModel, serviceTier, tokens, effectivePriceAtTime(price, timestampMS))
+			return quoteForPrice(behaviorModel, serviceTier, tokens, price, timestampMS)
 		}
 	}
 	for _, modelName := range candidates {
@@ -222,27 +229,31 @@ func CostForModelCandidatesWithServiceTierAtTime(modelNames []string, serviceTie
 		if !ok || effectivePriceAtTime(price, timestampMS).Retired {
 			continue
 		}
-		return costForHistoricalPrice(behaviorModel, serviceTier, tokens, effectivePriceAtTime(price, timestampMS))
+		return quoteForPrice(behaviorModel, serviceTier, tokens, price, timestampMS)
 	}
 	for _, modelName := range candidates {
 		price, ok := officialGPT56Price(modelName)
+		price.Estimated = true
 		if !ok || effectivePriceAtTime(price, timestampMS).Retired {
 			continue
 		}
-		return costForHistoricalPrice(behaviorModel, serviceTier, tokens, effectivePriceAtTime(price, timestampMS))
+		return quoteForPrice(behaviorModel, serviceTier, tokens, price, timestampMS)
 	}
-	return 0
+	return Quote{Status: "unpriced", Reasons: []string{"missing_rate"}}
 }
 
 func effectivePriceAtTime(price model.ModelPrice, timestampMS int64) model.ModelPrice {
-	if timestampMS <= 0 {
-		return price
+	if timestampMS < 0 {
+		return model.ModelPrice{Retired: true}
 	}
 	for i := len(price.History) - 1; i >= 0; i-- {
 		version := price.History[i]
 		if version.EffectiveFromMS <= timestampMS {
 			historical := version.Price
 			historical.Retired = version.Retired
+			if version.EffectiveFromMS == 0 {
+				historical.Estimated = true
+			}
 			historical.History = nil
 			return historical
 		}

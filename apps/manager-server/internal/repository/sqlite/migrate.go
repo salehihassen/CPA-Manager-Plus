@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	quotasnapshotrepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/quotasnapshot"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usagepricing"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usageprojection"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/usageidentity"
 )
@@ -48,6 +50,7 @@ const (
 	// revision-specific name so pending old cleanup cannot block startup.
 	usageAccountModelIdentityLegacy           = "usage_account_model_rollups_legacy_identity_v3"
 	usageAccountModelCodexIdentityLegacy      = "usage_account_model_rollups_legacy_identity_v3_codex_v2"
+	usagePricingAccountHourlyLegacy           = "usage_pricing_account_rollups_v1_legacy_hourly"
 	usagePricingAccountLegacy                 = "usage_pricing_account_rollups_v1_legacy_v1120_rc2"
 	usageDashboardHourlyLegacy                = "usage_dashboard_hourly_rollups_legacy_v1120_rc2"
 	usageHourlyAggregateLegacy                = "usage_hourly_aggregate_v1_legacy_v1120_rc2"
@@ -103,6 +106,7 @@ const (
 
 	createUsagePricingAccountRollupsTable = `create table if not exists usage_pricing_account_rollups_v1 (
 		structure_revision text not null,
+		bucket_ms integer not null default 0,
 		account_key text not null,
 		account_snapshot text,
 		auth_label_snapshot text,
@@ -118,6 +122,7 @@ const (
 		calls integer not null default 0,
 		success_calls integer not null default 0,
 		failure_calls integer not null default 0,
+		zero_token_calls integer not null default 0,
 		input_tokens integer not null default 0,
 		output_tokens integer not null default 0,
 		reasoning_tokens integer not null default 0,
@@ -134,7 +139,7 @@ const (
 		last_seen_ms integer not null,
 		updated_at_ms integer not null,
 		primary key (
-			structure_revision, account_key, model, billing_model, pricing_model,
+			structure_revision, bucket_ms, account_key, model, billing_model, pricing_model,
 			service_tier, context_threshold_tokens
 		)
 		)`
@@ -1192,7 +1197,7 @@ func ensureUsageAccountModelRollupPrimaryKeys(db *sql.DB) error {
 		return err
 	}
 	pricingMatches, err := tablePrimaryKeyMatches(tx, usagePricingAccountRollupsTable, []string{
-		"structure_revision", "account_key", "model", "billing_model", "pricing_model",
+		"structure_revision", "bucket_ms", "account_key", "model", "billing_model", "pricing_model",
 		"service_tier", "context_threshold_tokens",
 	})
 	if err != nil {
@@ -1202,8 +1207,14 @@ func ensureUsageAccountModelRollupPrimaryKeys(db *sql.DB) error {
 		return tx.Commit()
 	}
 
-	if err := ensureCompleteRawSourceForDerivedRebuild(tx, "account and pricing rollups"); err != nil {
-		return err
+	if !accountMatches {
+		if err := ensureCompleteRawSourceForDerivedRebuild(tx, "account rollups"); err != nil {
+			return err
+		}
+	} else if !pricingMatches {
+		if err := usagepricing.VerifyRetainedPricingRebuildSourceTx(context.Background(), tx); err != nil {
+			return err
+		}
 	}
 
 	if !accountMatches {
@@ -1224,7 +1235,15 @@ func ensureUsageAccountModelRollupPrimaryKeys(db *sql.DB) error {
 	}
 
 	if !pricingMatches {
-		if err := parkDerivedTable(tx, usagePricingAccountRollupsTable, usagePricingAccountLegacy); err != nil {
+		legacy := usagePricingAccountLegacy
+		oldKey, err := tablePrimaryKeyMatches(tx, usagePricingAccountRollupsTable, []string{"structure_revision", "account_key", "model", "billing_model", "pricing_model", "service_tier", "context_threshold_tokens"})
+		if err != nil {
+			return err
+		}
+		if oldKey {
+			legacy = usagePricingAccountHourlyLegacy
+		}
+		if err := parkDerivedTable(tx, usagePricingAccountRollupsTable, legacy); err != nil {
 			return err
 		}
 		for _, statement := range []string{

@@ -1,3 +1,4 @@
+import type { PricingCoverage } from '@/utils/pricingQuality';
 import type { TFunction } from 'i18next';
 import type { CodexQuotaState, QuotaResetAccuracy, XaiQuotaState } from '@/types';
 import { getSortedCodexResetCreditExpiries } from '@/components/quota/quotaConfigs';
@@ -203,6 +204,7 @@ export interface AccountDetailValueSummary {
 }
 
 export interface AccountDetailHistorySummary {
+  pricingCoverage?: PricingCoverage;
   matched: boolean;
   totalRequests: number;
   successCalls: number;
@@ -568,6 +570,7 @@ const toHistorySummary = (
     failureCalls: item.failure_calls,
     totalTokens: item.total_tokens,
     totalCost: item.total_cost,
+    pricingCoverage: item.pricing_coverage,
     successRate: item.success_rate === null ? null : item.success_rate * 100,
     firstSeenMs: item.first_seen_ms,
     lastSeenMs: item.last_seen_ms,

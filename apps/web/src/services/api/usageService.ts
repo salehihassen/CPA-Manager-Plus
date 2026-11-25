@@ -1,3 +1,4 @@
+import type { PricingCoverage } from '@/utils/pricingQuality';
 import axios from 'axios';
 import type { UsagePayload } from '@/features/monitoring/hooks/useUsageData';
 import {
@@ -821,6 +822,7 @@ export interface DashboardSummaryWindow {
 }
 
 export interface DashboardTodaySummary {
+  pricing_coverage?: PricingCoverage;
   total_calls: number;
   success_calls: number;
   failure_calls: number;
@@ -1106,6 +1108,7 @@ export interface MonitoringAccountLatestRequest {
 }
 
 export interface MonitoringAccountHistoryItem {
+  pricing_coverage?: PricingCoverage;
   row_key: string;
   account_key: string;
   generated_at_ms?: number;
@@ -1160,6 +1163,7 @@ export interface MonitoringAccountWindowUsageRequest {
 }
 
 export interface MonitoringAccountWindowUsageItem {
+  pricing_coverage?: PricingCoverage;
   request_key?: string;
   row_key: string;
   window_key?: string;
@@ -1483,6 +1487,7 @@ const buildDemoAccountQuotaSnapshotWindows = (
 };
 
 export interface MonitoringAnalyticsSummary {
+  pricing_coverage?: PricingCoverage;
   total_calls: number;
   success_calls: number;
   failure_calls: number;

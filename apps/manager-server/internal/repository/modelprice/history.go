@@ -20,6 +20,7 @@ func spliceHistory(ctx context.Context, tx *sql.Tx, before, after map[string]mod
 		snapshot := existing
 		snapshot.History = nil
 		snapshot.EffectiveFromMS = 0
+		snapshot.Estimated = true
 		snapshot.UpdatedAtMS = 0
 		snapshot.SyncedAtMS = nil
 		if err := insertHistory(ctx, tx, modelID, 0, snapshot); err != nil {
@@ -39,7 +40,10 @@ func spliceHistory(ctx context.Context, tx *sql.Tx, before, after map[string]mod
 	for modelID, price := range after {
 		effectiveFrom := now
 		existing, ok := before[modelID]
-		if price.EffectiveFromMS > 0 {
+		if price.EffectiveFromMS < 0 || price.EffectiveFromMS%3600000 != 0 || price.EffectiveFromMS > now {
+			return fmt.Errorf("model %s: effective date must be a whole UTC hour, no later than the next hour", modelID)
+		}
+		if price.EffectiveFromMS > 0 || price.HistoricalCorrection {
 			effectiveFrom = price.EffectiveFromMS
 		} else if !ok {
 			// The first entry preserves old estimates; subsequent changes start now.
@@ -52,22 +56,32 @@ func spliceHistory(ctx context.Context, tx *sql.Tx, before, after map[string]mod
 			}
 		}
 		var latest int64
-		if err := tx.QueryRowContext(ctx, `select coalesce(max(effective_from_ms),0) from model_price_history where model = ?`, modelID).Scan(&latest); err != nil {
+		var versionCount int
+		if err := tx.QueryRowContext(ctx, `select coalesce(max(effective_from_ms),0), count(*) from model_price_history where model = ?`, modelID).Scan(&latest, &versionCount); err != nil {
 			return err
-		}
-		if effectiveFrom < latest {
-			return fmt.Errorf("model %s has a later price version; only the latest version can be corrected", modelID)
 		}
 		snapshot := price
 		snapshot.Retired = false
 		snapshot.History = nil
 		snapshot.EffectiveFromMS = 0
+		snapshot.HistoricalCorrection = false
+		snapshot.Estimated = price.Estimated || effectiveFrom == 0
 		snapshot.UpdatedAtMS = now
-		if ok && sameBillingRules(existing, snapshot) {
+		if ok && !price.HistoricalCorrection && sameBillingRules(existing, snapshot) && (price.EffectiveFromMS == 0 || existing.Estimated == snapshot.Estimated) {
 			continue
+		}
+		if versionCount > 0 && (effectiveFrom < latest || effectiveFrom == latest && effectiveFrom < now) && !price.HistoricalCorrection {
+			return fmt.Errorf("model %s: replacing or inserting an older rate requires historicalCorrection", modelID)
 		}
 		if err := insertHistory(ctx, tx, modelID, effectiveFrom, snapshot); err != nil {
 			return err
+		}
+		if effectiveFrom < latest {
+			if ok {
+				after[modelID] = existing
+			} else {
+				delete(after, modelID)
+			}
 		}
 	}
 	return nil
@@ -75,6 +89,8 @@ func spliceHistory(ctx context.Context, tx *sql.Tx, before, after map[string]mod
 
 func sameBillingRules(left, right model.ModelPrice) bool {
 	left.History, right.History = nil, nil
+	left.HistoricalCorrection, right.HistoricalCorrection = false, false
+	left.Estimated, right.Estimated = false, false
 	left.Source, right.Source = "", ""
 	left.SourceModelID, right.SourceModelID = "", ""
 	left.RawJSON, right.RawJSON = "", ""
@@ -97,6 +113,7 @@ func insertHistory(ctx context.Context, tx *sql.Tx, modelID string, effectiveFro
 		return fmt.Errorf("model price effective date cannot be negative")
 	}
 	price.History = nil
+	price.HistoricalCorrection = false
 	price.EffectiveFromMS = 0
 	price.RawJSON = ""
 	price.Source = ""
@@ -141,6 +158,7 @@ func loadHistory(ctx context.Context, tx *sql.Tx, prices map[string]model.ModelP
 		price.History = append(price.History, version)
 		if active {
 			price.EffectiveFromMS = effectiveFrom
+			price.Estimated = version.Price.Estimated || effectiveFrom == 0
 		}
 		prices[modelID] = price
 	}

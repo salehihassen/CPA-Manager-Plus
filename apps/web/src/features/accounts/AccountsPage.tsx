@@ -1,3 +1,4 @@
+import { formatPricingValue, pricingQualityHint } from '@/utils/pricingQuality';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
   KeyboardEvent,
@@ -9109,10 +9110,10 @@ export function AccountsPage() {
         className: styles.accountHistoryMetricCost,
         value:
           matched && accountHistory.total_cost !== null
-            ? formatCompactUsd(accountHistory.total_cost)
+            ? formatPricingValue(formatCompactUsd(accountHistory.total_cost), accountHistory.pricing_coverage, t)
             : '-',
         exact:
-          matched && accountHistory.total_cost !== null ? formatUsd(accountHistory.total_cost) : '-',
+          matched && accountHistory.total_cost !== null ? [formatUsd(accountHistory.total_cost), pricingQualityHint(accountHistory.pricing_coverage, t)].filter(Boolean).join(' · ') : '-',
       },
       {
         key: 'success',

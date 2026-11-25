@@ -1,4 +1,9 @@
 {
+  "pricing_quality": {
+    "estimated": "Estimate",
+    "partial": "Partial cost",
+    "coverage": "{{estimated}} calls use estimates; costs may be incomplete for {{unpriced}} calls. Partial totals exclude unpriced portions."
+  },
   "manager_updates": {
     "server_version": "Manager Server version",
     "new_version": "CPAMP {{version}} is available",
@@ -2854,6 +2859,11 @@
     "remote_access_disabled": "This login method is not available for remote access. Please access from localhost."
   },
   "model_prices": {
+    "edit_version": "Edit this version",
+    "estimated_rate": "This rate is an estimate",
+    "correction_required": "Enable historical correction to change past pricing.",
+    "historical_correction_hint": "This changes costs from the selected hour until the next saved rate. Use published historical prices; later rates are preserved.",
+    "historical_correction": "Correct historical pricing",
     "eyebrow": "Model Pricing",
     "title": "Model Price Management",
     "subtitle": "Manage model prices in Manager Server, sync reliable matches automatically, and manually confirm similar matches.",
@@ -2917,9 +2927,9 @@
     "optional_price_placeholder": "Auto when blank",
     "empty": "No matching model prices",
     "effective_from_label": "Apply new price from",
-    "effective_from_hint": "Defaults to the next whole UTC hour so earlier usage keeps its rate. Only the latest version can be corrected; later scheduling is unavailable.",
+    "effective_from_hint": "Defaults to the next UTC hour. Earlier dates require explicit historical correction. Later rates remain in place.",
     "price_history_title": "Price history",
-    "price_history_epoch": "Initial price",
+    "price_history_epoch": "Undated baseline (estimate)",
     "price_history_unpriced": "Unpriced from this point",
     "invalid_effective_date": "Choose a whole UTC hour, no later than the next hour."
   },
